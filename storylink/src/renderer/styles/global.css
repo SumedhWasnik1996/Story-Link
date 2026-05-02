@@ -1,0 +1,32 @@
+/* src/renderer/styles/global.css */
+
+:root[data-theme='dark'] {
+    --bg: #1e1e2f;
+    --sidebar: #1e1e2f;
+    --header: #2a2a3d;
+    --text: #ffffff;
+    --text-muted: #aaaaaa;
+    --active: #007bff;
+}
+
+:root[data-theme='light'] {
+    --bg: #f5f5f5;
+    --sidebar: #ffffff;
+    --header: #eaeaea;
+    --text: #111111;
+    --text-muted: #555;
+    --active: #007bff;
+}
+
+/* Optional but recommended */
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+    transition: background 0.2s ease, color 0.2s ease;
+}
