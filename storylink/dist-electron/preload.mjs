@@ -18,3 +18,19 @@ electron.contextBridge.exposeInMainWorld("ipcRenderer", {
     return electron.ipcRenderer.invoke(channel, ...omit);
   }
 });
+electron.contextBridge.exposeInMainWorld("workspace", {
+  activate: (ws) => electron.ipcRenderer.invoke("workspace:activate", ws),
+  deactivate: () => electron.ipcRenderer.invoke("workspace:deactivate")
+});
+electron.contextBridge.exposeInMainWorld("jira", {
+  // Zero-param data calls
+  getIssues: () => electron.ipcRenderer.invoke("jira:getIssues"),
+  getProjects: () => electron.ipcRenderer.invoke("jira:getProjects"),
+  // Add Workspace wizard — explicit accountId needed (no workspace active yet)
+  connect: (accountId) => electron.ipcRenderer.invoke("jira:connect", accountId),
+  getProjectsForAccount: (accountId) => electron.ipcRenderer.invoke("jira:getProjectsForAccount", accountId),
+  // Account management
+  isConnected: (accountId) => electron.ipcRenderer.invoke("jira:isConnected", accountId),
+  disconnect: (accountId) => electron.ipcRenderer.invoke("jira:disconnect", accountId),
+  listAccounts: () => electron.ipcRenderer.invoke("jira:listAccounts")
+});

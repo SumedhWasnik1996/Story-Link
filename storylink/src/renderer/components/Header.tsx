@@ -5,7 +5,8 @@ export default function Header() {
     const { pathname } = useLocation();
 
     const titles: Record<string, string> = {
-        '/': 'Workspace',
+        '/'        : 'Workspaces',
+        '/stories' : 'Stories',
         '/releases': 'Releases',
         '/settings': 'Settings'
     };
