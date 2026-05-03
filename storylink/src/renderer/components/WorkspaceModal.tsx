@@ -10,6 +10,7 @@ type Props = { onClose: () => void };
 export default function AddWorkspaceModal({ onClose }: Props) {
     const { connectNewAccount, fetchProjectsForAccount, addWorkspace } = useWorkspaceStore();
 
+
     const [step, setStep] = useState<Step>('connect');
     const [accountId, setAccountId] = useState<string | null>(null);
     const [projects, setProjects] = useState<JiraProject[]>([]);
@@ -25,22 +26,22 @@ export default function AddWorkspaceModal({ onClose }: Props) {
         setError(null);
 
         try {
-            const id = await connectNewAccount();
-            setAccountId(id);
+            const result = await window.jira.connect();
+            if (!result.success) throw new Error(result.error ?? 'Connection failed');
 
-            const prjs = await fetchProjectsForAccount(id);
-            setLoading(false);
+            // No accountId to store — Electron holds it as pendingAccountId
+            const prjResult = await window.jira.getProjectsForNewAccount();
+            if (!prjResult.success) throw new Error(prjResult.error ?? 'Failed to load projects');
 
-            if (!prjs.length) {
-                setError('No Jira projects found for this account.');
-                return;
-            }
+            setProjects(prjResult.projects?.map((p: any) => ({
+                id: p.id, key: p.key, name: p.name,
+            })) ?? []);
 
-            setProjects(prjs);
             setStep('pick-project');
         } catch (err: any) {
+            setError(err.message);
+        } finally {
             setLoading(false);
-            setError(err.message);   // ← now shows the real error
         }
     };
 
@@ -52,9 +53,27 @@ export default function AddWorkspaceModal({ onClose }: Props) {
     };
 
     // Step 3: Save
-    const handleSave = () => {
-        if (!accountId || !selectedPrj || !name.trim()) return;
-        addWorkspace(name.trim(), selectedPrj.key, selectedPrj.name, accountId);
+    // Step 3: Save — frontend sends only display data, no accountId
+    const handleSave = async () => {
+        if (!selectedPrj || !name.trim()) return;
+        setLoading(true);
+
+        const result = await window.workspace.create({
+            name: name.trim(),
+            projectKey: selectedPrj.key,
+            projectName: selectedPrj.name,
+            // accountId NOT sent — Electron uses pendingAccountId internally
+        });
+
+        setLoading(false);
+
+        if (!result.success) {
+            setError(result.error ?? 'Failed to save workspace');
+            return;
+        }
+
+        // Refresh the store so new workspace appears immediately
+        await useWorkspaceStore.getState().loadWorkspaces();
         onClose();
     };
 

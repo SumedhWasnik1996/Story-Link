@@ -1,5 +1,7 @@
-// electron/electron-env.d.ts
 /// <reference types="vite-plugin-electron/electron-env" />
+
+// shared types are pure TS — safe to import in .d.ts files
+import type { WorkspaceView, ActiveWorkspaceView } from '@shared/types/workspace.types';
 
 declare namespace NodeJS {
     interface ProcessEnv {
@@ -11,33 +13,30 @@ declare namespace NodeJS {
 interface Window {
     ipcRenderer: import('electron').IpcRenderer;
 
-    // Workspace activation — send the full object once when switching.
-    // After this, all data calls are zero-param.
     workspace: {
-        activate(ws: {
-            id: string;
+        /** Returns all workspaces as safe views (no accountId). */
+        list(): Promise<WorkspaceView[]>;
+
+        /** Returns the active workspace without isActive flag, or null. */
+        getActive(): Promise<ActiveWorkspaceView>;
+
+        setActive(workspaceId: string): Promise<{ success: boolean; error?: string }>;
+
+        remove(workspaceId: string): Promise<{ success: boolean; error?: string }>;
+
+        /** Renderer only sends display data — accountId is handled by Electron internally. */
+        create(p: {
             name: string;
-            accountId: string;
             projectKey: string;
             projectName: string;
-        }): Promise<void>;
-        deactivate(): Promise<void>;
+        }): Promise<{ success: boolean; workspaceId?: string; error?: string }>;
     };
 
     jira: {
-        // ── Zero-param data calls ──────────────────────────────────────────
-        // Main process resolves accountId + projectKey from active workspace.
         getIssues(): Promise<{ success: boolean; issues?: any[]; error?: string }>;
-        getProjects(): Promise<{ success: boolean; projects?: any[]; error?: string }>;
-
-        // ── Add Workspace wizard ───────────────────────────────────────────
-        // Explicit accountId because no workspace is active yet.
-        connect(accountId: string): Promise<{ success: boolean; error?: string }>;
-        getProjectsForAccount(accountId: string): Promise<{ success: boolean; projects?: any[]; error?: string }>;
-
-        // ── Account management ─────────────────────────────────────────────
-        isConnected(accountId: string): Promise<boolean>;
-        disconnect(accountId: string): Promise<{ success: boolean; error?: string }>;
-        listAccounts(): Promise<{ success: boolean; accounts: string[]; error?: string }>;
+        connect(): Promise<{ success: boolean; error?: string }>;
+        getProjectsForNewAccount(): Promise<{ success: boolean; projects?: any[]; error?: string }>;
+        listAccounts(): Promise<{ success: boolean; accounts: string[] }>;
+        isConnected(): Promise<{ success: boolean; connected: boolean }>;
     };
 }

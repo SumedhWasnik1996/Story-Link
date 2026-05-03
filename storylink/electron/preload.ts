@@ -4,45 +4,57 @@ import { ipcRenderer, contextBridge } from 'electron';
 contextBridge.exposeInMainWorld('ipcRenderer', {
     on(...args: Parameters<typeof ipcRenderer.on>) {
         const [channel, listener] = args;
-        return ipcRenderer.on(channel, (event, ...args) => listener(event, ...args));
+        return ipcRenderer.on(channel, (event, ...a) => listener(event, ...a));
     },
     off(...args: Parameters<typeof ipcRenderer.off>) {
-        const [channel, ...omit] = args;
-        return ipcRenderer.off(channel, ...omit);
+        const [channel, ...rest] = args;
+        return ipcRenderer.off(channel, ...rest);
     },
     send(...args: Parameters<typeof ipcRenderer.send>) {
-        const [channel, ...omit] = args;
-        return ipcRenderer.send(channel, ...omit);
+        const [channel, ...rest] = args;
+        return ipcRenderer.send(channel, ...rest);
     },
     invoke(...args: Parameters<typeof ipcRenderer.invoke>) {
-        const [channel, ...omit] = args;
-        return ipcRenderer.invoke(channel, ...omit);
+        const [channel, ...rest] = args;
+        return ipcRenderer.invoke(channel, ...rest);
     },
 });
 
-// ── Workspace API ─────────────────────────────────────────────────────────────
-// Activate sends the full workspace object once.
-// All subsequent data calls are zero-param.
+// ── Workspace ─────────────────────────────────────────────────────────────────
+// Renderer receives only WorkspaceView (no accountId ever crosses this bridge).
+
 contextBridge.exposeInMainWorld('workspace', {
-    activate: (ws: any) => ipcRenderer.invoke('workspace:activate', ws),
-    deactivate: () => ipcRenderer.invoke('workspace:deactivate'),
+    list: () =>
+        ipcRenderer.invoke('workspace:list'),
+
+    getActive: () =>
+        ipcRenderer.invoke('workspace:getActive'),
+
+    setActive: (workspaceId: string) =>
+        ipcRenderer.invoke('workspace:setActive', workspaceId),
+
+    remove: (workspaceId: string) =>
+        ipcRenderer.invoke('workspace:remove', workspaceId),
+
+    create: (payload: { name: string; projectKey: string; projectName: string }) =>
+        ipcRenderer.invoke('workspace:create', payload),
 });
 
-// ── Jira API ──────────────────────────────────────────────────────────────────
-// Data calls (getIssues, getProjects) have no params — main resolves from active workspace.
-// Account management calls (connect, disconnect, etc.) still carry an accountId
-// because they deal with accounts that may not be active yet.
+// ── Jira ──────────────────────────────────────────────────────────────────────
+
 contextBridge.exposeInMainWorld('jira', {
-    // Zero-param data calls
-    getIssues: () => ipcRenderer.invoke('jira:getIssues'),
-    getProjects: () => ipcRenderer.invoke('jira:getProjects'),
+    getIssues: () =>
+        ipcRenderer.invoke('jira:getIssues'),
 
-    // Add Workspace wizard — explicit accountId needed (no workspace active yet)
-    connect: (accountId: string) => ipcRenderer.invoke('jira:connect', accountId),
-    getProjectsForAccount: (accountId: string) => ipcRenderer.invoke('jira:getProjectsForAccount', accountId),
+    connect: () =>
+        ipcRenderer.invoke('jira:connect'),
 
-    // Account management
-    isConnected: (accountId: string) => ipcRenderer.invoke('jira:isConnected', accountId),
-    disconnect: (accountId: string) => ipcRenderer.invoke('jira:disconnect', accountId),
-    listAccounts: () => ipcRenderer.invoke('jira:listAccounts'),
+    getProjectsForNewAccount: () =>
+        ipcRenderer.invoke('jira:getProjectsForNewAccount'),
+
+    listAccounts: () =>
+        ipcRenderer.invoke('jira:listAccounts'),
+
+    isConnected: () =>
+        ipcRenderer.invoke('jira:isConnected'),
 });

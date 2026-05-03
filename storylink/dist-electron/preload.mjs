@@ -3,34 +3,32 @@ const electron = require("electron");
 electron.contextBridge.exposeInMainWorld("ipcRenderer", {
   on(...args) {
     const [channel, listener] = args;
-    return electron.ipcRenderer.on(channel, (event, ...args2) => listener(event, ...args2));
+    return electron.ipcRenderer.on(channel, (event, ...a) => listener(event, ...a));
   },
   off(...args) {
-    const [channel, ...omit] = args;
-    return electron.ipcRenderer.off(channel, ...omit);
+    const [channel, ...rest] = args;
+    return electron.ipcRenderer.off(channel, ...rest);
   },
   send(...args) {
-    const [channel, ...omit] = args;
-    return electron.ipcRenderer.send(channel, ...omit);
+    const [channel, ...rest] = args;
+    return electron.ipcRenderer.send(channel, ...rest);
   },
   invoke(...args) {
-    const [channel, ...omit] = args;
-    return electron.ipcRenderer.invoke(channel, ...omit);
+    const [channel, ...rest] = args;
+    return electron.ipcRenderer.invoke(channel, ...rest);
   }
 });
 electron.contextBridge.exposeInMainWorld("workspace", {
-  activate: (ws) => electron.ipcRenderer.invoke("workspace:activate", ws),
-  deactivate: () => electron.ipcRenderer.invoke("workspace:deactivate")
+  list: () => electron.ipcRenderer.invoke("workspace:list"),
+  getActive: () => electron.ipcRenderer.invoke("workspace:getActive"),
+  setActive: (workspaceId) => electron.ipcRenderer.invoke("workspace:setActive", workspaceId),
+  remove: (workspaceId) => electron.ipcRenderer.invoke("workspace:remove", workspaceId),
+  create: (payload) => electron.ipcRenderer.invoke("workspace:create", payload)
 });
 electron.contextBridge.exposeInMainWorld("jira", {
-  // Zero-param data calls
   getIssues: () => electron.ipcRenderer.invoke("jira:getIssues"),
-  getProjects: () => electron.ipcRenderer.invoke("jira:getProjects"),
-  // Add Workspace wizard — explicit accountId needed (no workspace active yet)
-  connect: (accountId) => electron.ipcRenderer.invoke("jira:connect", accountId),
-  getProjectsForAccount: (accountId) => electron.ipcRenderer.invoke("jira:getProjectsForAccount", accountId),
-  // Account management
-  isConnected: (accountId) => electron.ipcRenderer.invoke("jira:isConnected", accountId),
-  disconnect: (accountId) => electron.ipcRenderer.invoke("jira:disconnect", accountId),
-  listAccounts: () => electron.ipcRenderer.invoke("jira:listAccounts")
+  connect: () => electron.ipcRenderer.invoke("jira:connect"),
+  getProjectsForNewAccount: () => electron.ipcRenderer.invoke("jira:getProjectsForNewAccount"),
+  listAccounts: () => electron.ipcRenderer.invoke("jira:listAccounts"),
+  isConnected: () => electron.ipcRenderer.invoke("jira:isConnected")
 });

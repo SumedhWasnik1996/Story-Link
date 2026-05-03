@@ -1,8 +1,7 @@
+// src/renderer/pages/Settings.tsx
 import { JiraConnection } from '../hooks/JiraConnection';
 
 export default function Settings() {
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { connected, loading, error, handleConnect } = JiraConnection();
 
     return (
@@ -12,39 +11,35 @@ export default function Settings() {
                 borderRadius: '8px',
                 padding: '20px',
             }}>
-                <h3 style={{ margin: '0 0 12px' }}>
-                    Jira Integartion
-                </h3>
+                {/* Fixed typo: "Integartion" → "Integration" */}
+                <h3 style={{ margin: '0 0 12px' }}>Jira Integration</h3>
 
-                {connected === null && <p> Checking connection....</p>}
+                {connected === null && (
+                    <p style={{ color: 'var(--text-muted)' }}>Checking connection…</p>
+                )}
 
                 {connected === false && (
                     <>
-                        <p style={{
-                            color: 'var(--text-muted)',
-                            margin: '0 0 12px'
-                        }}>
+                        <p style={{ color: 'var(--text-muted)', margin: '0 0 12px' }}>
                             Connect your Jira account to sync issues and releases.
                         </p>
-                        <button onClick={handleConnect} disabled={loading} style={btnStyle}>
-                            {loading ? 'Connecting...' : 'Jira connected'}
+                        {/* Fixed label: was "Jira connected" when not yet connected */}
+                        <button
+                            onClick={handleConnect}
+                            disabled={loading}
+                            style={btnStyle}
+                        >
+                            {loading ? 'Connecting…' : 'Connect Jira'}
                         </button>
                     </>
                 )}
 
                 {connected === true && (
-                    <p style={{ color: '#4caf50' }}>
-                        Jira Connected
-                    </p>
+                    <p style={{ color: '#4caf50' }}>✓ Jira connected</p>
                 )}
 
                 {error && (
-                    <p style={{
-                        color: '#f44336',
-                        marginTop: '12px'
-                    }}>
-                        { error }
-                    </p>
+                    <p style={{ color: '#f44336', marginTop: '12px' }}>{error}</p>
                 )}
             </div>
         </div>
@@ -53,7 +48,7 @@ export default function Settings() {
 
 const btnStyle: React.CSSProperties = {
     padding: '10px 20px',
-    background: '#0052CC',   // Jira blue
+    background: '#0052CC',
     color: '#fff',
     border: 'none',
     borderRadius: '6px',

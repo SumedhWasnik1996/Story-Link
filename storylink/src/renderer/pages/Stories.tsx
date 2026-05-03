@@ -1,18 +1,14 @@
 // src/renderer/pages/Stories.tsx
 import { useWorkspaceStore } from '../../store/Workspace.store';
-import type { Issue } from '../../types/workspace.types';
+import type { Issue } from '@shared/types/workspace.types';
 
 export default function Stories() {
-    // ✅ Select primitives separately — never call functions inside selectors
     const workspaces = useWorkspaceStore(s => s.workspaces);
-    const activeId = useWorkspaceStore(s => s.activeWorkspaceId);
+    const activeWorkspace = useWorkspaceStore(s => s.activeWorkspace);  // fixed: no longer activeWorkspaceId
     const issues = useWorkspaceStore(s => s.issues);
     const issuesStatus = useWorkspaceStore(s => s.issuesStatus);
     const issuesError = useWorkspaceStore(s => s.issuesError);
     const loadIssues = useWorkspaceStore(s => s.loadIssues);
-
-    // Derive activeWorkspace safely from primitives
-    const activeWorkspace = workspaces.find(w => w.id === activeId) ?? null;
 
     if (workspaces.length === 0) {
         return (
@@ -38,9 +34,16 @@ export default function Stories() {
         <div style={{ padding: '20px' }}>
 
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: '20px',
+            }}>
                 <div>
-                    <h2 style={{ margin: '0 0 4px', color: 'var(--text)' }}>{activeWorkspace.name}</h2>
+                    <h2 style={{ margin: '0 0 4px', color: 'var(--text)' }}>
+                        {activeWorkspace.name}
+                    </h2>
                     <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                         {activeWorkspace.projectName} · {activeWorkspace.projectKey}
                     </span>
@@ -50,18 +53,21 @@ export default function Stories() {
                     disabled={issuesStatus === 'loading'}
                     style={refreshBtn}
                 >
-                    {issuesStatus === 'loading' ? '...' : '↻ Refresh'}
+                    {issuesStatus === 'loading' ? '…' : '↻ Refresh'}
                 </button>
             </div>
 
             {issuesStatus === 'loading' && (
-                <p style={{ color: 'var(--text-muted)' }}>Loading issues...</p>
+                <p style={{ color: 'var(--text-muted)' }}>Loading issues…</p>
             )}
 
             {issuesStatus === 'error' && issuesError && (
                 <div style={errorBox}>
                     <p style={{ margin: 0, color: '#f44336' }}>{issuesError}</p>
-                    <button onClick={() => loadIssues({ forceRefresh: true })} style={retryBtn}>
+                    <button
+                        onClick={() => loadIssues({ forceRefresh: true })}
+                        style={retryBtn}
+                    >
                         Retry
                     </button>
                 </div>
@@ -73,7 +79,9 @@ export default function Stories() {
                 </p>
             )}
 
-            {issues.map(issue => <IssueCard key={issue.id} issue={issue} />)}
+            {issues.map(issue => (
+                <IssueCard key={issue.id} issue={issue} />
+            ))}
         </div>
     );
 }
@@ -81,15 +89,29 @@ export default function Stories() {
 function IssueCard({ issue }: { issue: Issue }) {
     return (
         <div style={card}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '6px',
+            }}>
+                <span style={{
+                    fontSize: '12px',
+                    color: 'var(--text-muted)',
+                    fontFamily: 'monospace',
+                }}>
                     {issue.key}
                 </span>
                 <Tag label={issue.type} color="#3a3a5c" />
                 <Tag label={issue.priority} color="#4a3a3a" />
                 <Tag label={issue.status} color="#003380" />
             </div>
-            <p style={{ margin: 0, color: 'var(--text)', fontWeight: 500, lineHeight: 1.5 }}>
+            <p style={{
+                margin: 0,
+                color: 'var(--text)',
+                fontWeight: 500,
+                lineHeight: 1.5,
+            }}>
                 {issue.summary}
             </p>
         </div>
@@ -99,15 +121,23 @@ function IssueCard({ issue }: { issue: Issue }) {
 function Tag({ label, color }: { label: string; color: string }) {
     return (
         <span style={{
-            background: color, color: '#ccc',
-            padding: '2px 8px', borderRadius: '4px', fontSize: '11px',
+            background: color,
+            color: '#ccc',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            fontSize: '11px',
         }}>
             {label}
         </span>
     );
 }
 
-const centred: React.CSSProperties = { padding: '48px 20px', textAlign: 'center' };
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const centred: React.CSSProperties = {
+    padding: '48px 20px',
+    textAlign: 'center',
+};
 
 const card: React.CSSProperties = {
     background: 'var(--header)',

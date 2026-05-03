@@ -1,10 +1,14 @@
-import { shell, safeStorage, app, ipcMain, BrowserWindow } from "electron";
+var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+import { app, shell, safeStorage, ipcMain, BrowserWindow } from "electron";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path$2 from "node:path";
-import util$3 from "util";
+import fs$2 from "node:fs";
+import require$$1 from "util";
 import stream, { Readable } from "stream";
-import require$$1, { resolve } from "path";
+import require$$1$1, { resolve } from "path";
 import require$$3 from "http";
 import require$$4 from "https";
 import require$$5 from "url";
@@ -12,9 +16,61 @@ import require$$6 from "fs";
 import require$$8 from "crypto";
 import http2 from "http2";
 import require$$4$1 from "assert";
+import require$$0$1 from "tty";
 import zlib from "zlib";
 import { EventEmitter } from "events";
-import fs$2 from "node:fs";
+function getPath() {
+  return path$2.join(app.getPath("userData"), "workspaces.json");
+}
+function load() {
+  const file = getPath();
+  if (!fs$2.existsSync(file)) return { workspaces: [], activeWorkspaceId: null };
+  try {
+    return JSON.parse(fs$2.readFileSync(file, "utf-8"));
+  } catch {
+    return { workspaces: [], activeWorkspaceId: null };
+  }
+}
+function persist(store) {
+  fs$2.writeFileSync(getPath(), JSON.stringify(store, null, 2));
+}
+class WorkspaceStoreManager {
+  constructor() {
+    __publicField(this, "store", load());
+  }
+  getAll() {
+    return this.store;
+  }
+  save() {
+    persist(this.store);
+  }
+  setActive(id) {
+    this.store.activeWorkspaceId = id;
+    this.save();
+  }
+  add(workspace) {
+    this.store.workspaces.push(workspace);
+    if (!this.store.activeWorkspaceId) {
+      this.store.activeWorkspaceId = workspace.id;
+    }
+    this.save();
+  }
+  remove(id) {
+    var _a;
+    this.store.workspaces = this.store.workspaces.filter((w) => w.id !== id);
+    if (this.store.activeWorkspaceId === id) {
+      this.store.activeWorkspaceId = ((_a = this.store.workspaces[0]) == null ? void 0 : _a.id) ?? null;
+    }
+    this.save();
+  }
+  getActive() {
+    return this.store.workspaces.find((w) => w.id === this.store.activeWorkspaceId) ?? null;
+  }
+  find(id) {
+    return this.store.workspaces.find((w) => w.id === id);
+  }
+}
+const workspaceStore = new WorkspaceStoreManager();
 function bind$2(fn, thisArg) {
   return function wrap2() {
     return fn.apply(thisArg, arguments);
@@ -895,7 +951,7 @@ function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
 var Stream$2 = stream.Stream;
-var util$2 = util$3;
+var util$2 = require$$1;
 var delayed_stream = DelayedStream$1;
 function DelayedStream$1() {
   this.source = null;
@@ -979,7 +1035,7 @@ DelayedStream$1.prototype._checkIfMaxDataSizeExceeded = function() {
   var message = "DelayedStream#maxDataSize of " + this.maxDataSize + " bytes exceeded.";
   this.emit("error", new Error(message));
 };
-var util$1 = util$3;
+var util$1 = require$$1;
 var Stream$1 = stream.Stream;
 var DelayedStream = delayed_stream;
 var combined_stream = CombinedStream$1;
@@ -11860,7 +11916,7 @@ var mimeDb = require$$0;
  */
 (function(exports$1) {
   var db = mimeDb;
-  var extname = require$$1.extname;
+  var extname = require$$1$1.extname;
   var EXTRACT_TYPE_REGEXP = /^\s*([^;\s]*)(?:;|\s|$)/;
   var TEXT_TYPE_REGEXP = /^text\//i;
   exports$1.charset = charset;
@@ -12094,7 +12150,14 @@ var _eval = EvalError;
 var range = RangeError;
 var ref = ReferenceError;
 var syntax = SyntaxError;
-var type = TypeError;
+var type;
+var hasRequiredType;
+function requireType() {
+  if (hasRequiredType) return type;
+  hasRequiredType = 1;
+  type = TypeError;
+  return type;
+}
 var uri = URIError;
 var abs$1 = Math.abs;
 var floor$1 = Math.floor;
@@ -12340,7 +12403,7 @@ function requireCallBindApplyHelpers() {
   if (hasRequiredCallBindApplyHelpers) return callBindApplyHelpers;
   hasRequiredCallBindApplyHelpers = 1;
   var bind3 = functionBind;
-  var $TypeError2 = type;
+  var $TypeError2 = requireType();
   var $call2 = requireFunctionCall();
   var $actualApply = requireActualApply();
   callBindApplyHelpers = function callBindBasic(args) {
@@ -12413,7 +12476,7 @@ var $EvalError = _eval;
 var $RangeError = range;
 var $ReferenceError = ref;
 var $SyntaxError = syntax;
-var $TypeError$1 = type;
+var $TypeError$1 = requireType();
 var $URIError = uri;
 var abs = abs$1;
 var floor = floor$1;
@@ -12744,7 +12807,7 @@ var GetIntrinsic2 = getIntrinsic;
 var $defineProperty = GetIntrinsic2("%Object.defineProperty%", true);
 var hasToStringTag = requireShams()();
 var hasOwn$1 = hasown;
-var $TypeError = type;
+var $TypeError = requireType();
 var toStringTag = hasToStringTag ? Symbol.toStringTag : null;
 var esSetTostringtag = function setToStringTag(object, value) {
   var overrideIfSet = arguments.length > 2 && !!arguments[2] && arguments[2].force;
@@ -12765,15 +12828,15 @@ var esSetTostringtag = function setToStringTag(object, value) {
     }
   }
 };
-var populate$1 = function(dst, src) {
-  Object.keys(src).forEach(function(prop) {
-    dst[prop] = dst[prop] || src[prop];
+var populate$1 = function(dst, src2) {
+  Object.keys(src2).forEach(function(prop) {
+    dst[prop] = dst[prop] || src2[prop];
   });
   return dst;
 };
 var CombinedStream = combined_stream;
-var util = util$3;
-var path$1 = require$$1;
+var util = require$$1;
+var path$1 = require$$1$1;
 var http$1 = require$$3;
 var https$1 = require$$4;
 var parseUrl$2 = require$$5.parse;
@@ -12785,9 +12848,9 @@ var asynckit = asynckit$1;
 var setToStringTag2 = esSetTostringtag;
 var hasOwn = hasown;
 var populate = populate$1;
-function FormData$2(options) {
-  if (!(this instanceof FormData$2)) {
-    return new FormData$2(options);
+function FormData$1(options) {
+  if (!(this instanceof FormData$1)) {
+    return new FormData$1(options);
   }
   this._overheadLength = 0;
   this._valueLength = 0;
@@ -12798,10 +12861,10 @@ function FormData$2(options) {
     this[option] = options[option];
   }
 }
-util.inherits(FormData$2, CombinedStream);
-FormData$2.LINE_BREAK = "\r\n";
-FormData$2.DEFAULT_CONTENT_TYPE = "application/octet-stream";
-FormData$2.prototype.append = function(field, value, options) {
+util.inherits(FormData$1, CombinedStream);
+FormData$1.LINE_BREAK = "\r\n";
+FormData$1.DEFAULT_CONTENT_TYPE = "application/octet-stream";
+FormData$1.prototype.append = function(field, value, options) {
   options = options || {};
   if (typeof options === "string") {
     options = { filename: options };
@@ -12821,7 +12884,7 @@ FormData$2.prototype.append = function(field, value, options) {
   append2(footer);
   this._trackLength(header, value, options);
 };
-FormData$2.prototype._trackLength = function(header, value, options) {
+FormData$1.prototype._trackLength = function(header, value, options) {
   var valueLength = 0;
   if (options.knownLength != null) {
     valueLength += Number(options.knownLength);
@@ -12831,7 +12894,7 @@ FormData$2.prototype._trackLength = function(header, value, options) {
     valueLength = Buffer.byteLength(value);
   }
   this._valueLength += valueLength;
-  this._overheadLength += Buffer.byteLength(header) + FormData$2.LINE_BREAK.length;
+  this._overheadLength += Buffer.byteLength(header) + FormData$1.LINE_BREAK.length;
   if (!value || !value.path && !(value.readable && hasOwn(value, "httpVersion")) && !(value instanceof Stream)) {
     return;
   }
@@ -12839,7 +12902,7 @@ FormData$2.prototype._trackLength = function(header, value, options) {
     this._valuesToMeasure.push(value);
   }
 };
-FormData$2.prototype._lengthRetriever = function(value, callback) {
+FormData$1.prototype._lengthRetriever = function(value, callback) {
   if (hasOwn(value, "fd")) {
     if (value.end != void 0 && value.end != Infinity && value.start != void 0) {
       callback(null, value.end + 1 - (value.start ? value.start : 0));
@@ -12865,7 +12928,7 @@ FormData$2.prototype._lengthRetriever = function(value, callback) {
     callback("Unknown stream");
   }
 };
-FormData$2.prototype._multiPartHeader = function(field, value, options) {
+FormData$1.prototype._multiPartHeader = function(field, value, options) {
   if (typeof options.header === "string") {
     return options.header;
   }
@@ -12892,13 +12955,13 @@ FormData$2.prototype._multiPartHeader = function(field, value, options) {
         header = [header];
       }
       if (header.length) {
-        contents += prop + ": " + header.join("; ") + FormData$2.LINE_BREAK;
+        contents += prop + ": " + header.join("; ") + FormData$1.LINE_BREAK;
       }
     }
   }
-  return "--" + this.getBoundary() + FormData$2.LINE_BREAK + contents + FormData$2.LINE_BREAK;
+  return "--" + this.getBoundary() + FormData$1.LINE_BREAK + contents + FormData$1.LINE_BREAK;
 };
-FormData$2.prototype._getContentDisposition = function(value, options) {
+FormData$1.prototype._getContentDisposition = function(value, options) {
   var filename;
   if (typeof options.filepath === "string") {
     filename = path$1.normalize(options.filepath).replace(/\\/g, "/");
@@ -12911,7 +12974,7 @@ FormData$2.prototype._getContentDisposition = function(value, options) {
     return 'filename="' + filename + '"';
   }
 };
-FormData$2.prototype._getContentType = function(value, options) {
+FormData$1.prototype._getContentType = function(value, options) {
   var contentType = options.contentType;
   if (!contentType && value && value.name) {
     contentType = mime.lookup(value.name);
@@ -12926,13 +12989,13 @@ FormData$2.prototype._getContentType = function(value, options) {
     contentType = mime.lookup(options.filepath || options.filename);
   }
   if (!contentType && value && typeof value === "object") {
-    contentType = FormData$2.DEFAULT_CONTENT_TYPE;
+    contentType = FormData$1.DEFAULT_CONTENT_TYPE;
   }
   return contentType;
 };
-FormData$2.prototype._multiPartFooter = function() {
+FormData$1.prototype._multiPartFooter = function() {
   return (function(next) {
-    var footer = FormData$2.LINE_BREAK;
+    var footer = FormData$1.LINE_BREAK;
     var lastPart = this._streams.length === 0;
     if (lastPart) {
       footer += this._lastBoundary();
@@ -12940,10 +13003,10 @@ FormData$2.prototype._multiPartFooter = function() {
     next(footer);
   }).bind(this);
 };
-FormData$2.prototype._lastBoundary = function() {
-  return "--" + this.getBoundary() + "--" + FormData$2.LINE_BREAK;
+FormData$1.prototype._lastBoundary = function() {
+  return "--" + this.getBoundary() + "--" + FormData$1.LINE_BREAK;
 };
-FormData$2.prototype.getHeaders = function(userHeaders) {
+FormData$1.prototype.getHeaders = function(userHeaders) {
   var header;
   var formHeaders = {
     "content-type": "multipart/form-data; boundary=" + this.getBoundary()
@@ -12955,19 +13018,19 @@ FormData$2.prototype.getHeaders = function(userHeaders) {
   }
   return formHeaders;
 };
-FormData$2.prototype.setBoundary = function(boundary) {
+FormData$1.prototype.setBoundary = function(boundary) {
   if (typeof boundary !== "string") {
     throw new TypeError("FormData boundary must be a string");
   }
   this._boundary = boundary;
 };
-FormData$2.prototype.getBoundary = function() {
+FormData$1.prototype.getBoundary = function() {
   if (!this._boundary) {
     this._generateBoundary();
   }
   return this._boundary;
 };
-FormData$2.prototype.getBuffer = function() {
+FormData$1.prototype.getBuffer = function() {
   var dataBuffer = new Buffer.alloc(0);
   var boundary = this.getBoundary();
   for (var i = 0, len = this._streams.length; i < len; i++) {
@@ -12978,16 +13041,16 @@ FormData$2.prototype.getBuffer = function() {
         dataBuffer = Buffer.concat([dataBuffer, Buffer.from(this._streams[i])]);
       }
       if (typeof this._streams[i] !== "string" || this._streams[i].substring(2, boundary.length + 2) !== boundary) {
-        dataBuffer = Buffer.concat([dataBuffer, Buffer.from(FormData$2.LINE_BREAK)]);
+        dataBuffer = Buffer.concat([dataBuffer, Buffer.from(FormData$1.LINE_BREAK)]);
       }
     }
   }
   return Buffer.concat([dataBuffer, Buffer.from(this._lastBoundary())]);
 };
-FormData$2.prototype._generateBoundary = function() {
+FormData$1.prototype._generateBoundary = function() {
   this._boundary = "--------------------------" + crypto.randomBytes(12).toString("hex");
 };
-FormData$2.prototype.getLengthSync = function() {
+FormData$1.prototype.getLengthSync = function() {
   var knownLength = this._overheadLength + this._valueLength;
   if (this._streams.length) {
     knownLength += this._lastBoundary().length;
@@ -12997,14 +13060,14 @@ FormData$2.prototype.getLengthSync = function() {
   }
   return knownLength;
 };
-FormData$2.prototype.hasKnownLength = function() {
+FormData$1.prototype.hasKnownLength = function() {
   var hasKnownLength = true;
   if (this._valuesToMeasure.length) {
     hasKnownLength = false;
   }
   return hasKnownLength;
 };
-FormData$2.prototype.getLength = function(cb) {
+FormData$1.prototype.getLength = function(cb) {
   var knownLength = this._overheadLength + this._valueLength;
   if (this._streams.length) {
     knownLength += this._lastBoundary().length;
@@ -13024,7 +13087,7 @@ FormData$2.prototype.getLength = function(cb) {
     cb(null, knownLength);
   });
 };
-FormData$2.prototype.submit = function(params, cb) {
+FormData$1.prototype.submit = function(params, cb) {
   var request;
   var options;
   var defaults2 = { method: "post" };
@@ -13071,19 +13134,19 @@ FormData$2.prototype.submit = function(params, cb) {
   }).bind(this));
   return request;
 };
-FormData$2.prototype._error = function(err) {
+FormData$1.prototype._error = function(err) {
   if (!this.error) {
     this.error = err;
     this.pause();
     this.emit("error", err);
   }
 };
-FormData$2.prototype.toString = function() {
+FormData$1.prototype.toString = function() {
   return "[object FormData]";
 };
-setToStringTag2(FormData$2.prototype, "FormData");
-var form_data = FormData$2;
-const FormData$1 = /* @__PURE__ */ getDefaultExportFromCjs(form_data);
+setToStringTag2(FormData$1.prototype, "FormData");
+var form_data = FormData$1;
+const FormData$2 = /* @__PURE__ */ getDefaultExportFromCjs(form_data);
 function isVisitable(thing) {
   return utils$1.isPlainObject(thing) || utils$1.isArray(thing);
 }
@@ -13107,7 +13170,7 @@ function toFormData$1(obj, formData, options) {
   if (!utils$1.isObject(obj)) {
     throw new TypeError("target must be an object");
   }
-  formData = formData || new (FormData$1 || FormData)();
+  formData = formData || new (FormData$2 || FormData)();
   options = utils$1.toFlatObject(
     options,
     {
@@ -13352,7 +13415,7 @@ const platform$1 = {
   isNode: true,
   classes: {
     URLSearchParams,
-    FormData: FormData$1,
+    FormData: FormData$2,
     Blob: typeof Blob !== "undefined" && Blob || null
   },
   ALPHABET,
@@ -13681,11 +13744,668 @@ function getEnv(key) {
   return process.env[key.toLowerCase()] || process.env[key.toUpperCase()] || "";
 }
 var followRedirects$1 = { exports: {} };
+var src = { exports: {} };
+var browser = { exports: {} };
+var ms;
+var hasRequiredMs;
+function requireMs() {
+  if (hasRequiredMs) return ms;
+  hasRequiredMs = 1;
+  var s = 1e3;
+  var m = s * 60;
+  var h = m * 60;
+  var d = h * 24;
+  var w = d * 7;
+  var y = d * 365.25;
+  ms = function(val, options) {
+    options = options || {};
+    var type2 = typeof val;
+    if (type2 === "string" && val.length > 0) {
+      return parse2(val);
+    } else if (type2 === "number" && isFinite(val)) {
+      return options.long ? fmtLong(val) : fmtShort(val);
+    }
+    throw new Error(
+      "val is not a non-empty string or a valid number. val=" + JSON.stringify(val)
+    );
+  };
+  function parse2(str) {
+    str = String(str);
+    if (str.length > 100) {
+      return;
+    }
+    var match = /^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$/i.exec(
+      str
+    );
+    if (!match) {
+      return;
+    }
+    var n = parseFloat(match[1]);
+    var type2 = (match[2] || "ms").toLowerCase();
+    switch (type2) {
+      case "years":
+      case "year":
+      case "yrs":
+      case "yr":
+      case "y":
+        return n * y;
+      case "weeks":
+      case "week":
+      case "w":
+        return n * w;
+      case "days":
+      case "day":
+      case "d":
+        return n * d;
+      case "hours":
+      case "hour":
+      case "hrs":
+      case "hr":
+      case "h":
+        return n * h;
+      case "minutes":
+      case "minute":
+      case "mins":
+      case "min":
+      case "m":
+        return n * m;
+      case "seconds":
+      case "second":
+      case "secs":
+      case "sec":
+      case "s":
+        return n * s;
+      case "milliseconds":
+      case "millisecond":
+      case "msecs":
+      case "msec":
+      case "ms":
+        return n;
+      default:
+        return void 0;
+    }
+  }
+  function fmtShort(ms2) {
+    var msAbs = Math.abs(ms2);
+    if (msAbs >= d) {
+      return Math.round(ms2 / d) + "d";
+    }
+    if (msAbs >= h) {
+      return Math.round(ms2 / h) + "h";
+    }
+    if (msAbs >= m) {
+      return Math.round(ms2 / m) + "m";
+    }
+    if (msAbs >= s) {
+      return Math.round(ms2 / s) + "s";
+    }
+    return ms2 + "ms";
+  }
+  function fmtLong(ms2) {
+    var msAbs = Math.abs(ms2);
+    if (msAbs >= d) {
+      return plural(ms2, msAbs, d, "day");
+    }
+    if (msAbs >= h) {
+      return plural(ms2, msAbs, h, "hour");
+    }
+    if (msAbs >= m) {
+      return plural(ms2, msAbs, m, "minute");
+    }
+    if (msAbs >= s) {
+      return plural(ms2, msAbs, s, "second");
+    }
+    return ms2 + " ms";
+  }
+  function plural(ms2, msAbs, n, name) {
+    var isPlural = msAbs >= n * 1.5;
+    return Math.round(ms2 / n) + " " + name + (isPlural ? "s" : "");
+  }
+  return ms;
+}
+var common;
+var hasRequiredCommon;
+function requireCommon() {
+  if (hasRequiredCommon) return common;
+  hasRequiredCommon = 1;
+  function setup(env) {
+    createDebug.debug = createDebug;
+    createDebug.default = createDebug;
+    createDebug.coerce = coerce;
+    createDebug.disable = disable;
+    createDebug.enable = enable;
+    createDebug.enabled = enabled;
+    createDebug.humanize = requireMs();
+    createDebug.destroy = destroy2;
+    Object.keys(env).forEach((key) => {
+      createDebug[key] = env[key];
+    });
+    createDebug.names = [];
+    createDebug.skips = [];
+    createDebug.formatters = {};
+    function selectColor(namespace) {
+      let hash = 0;
+      for (let i = 0; i < namespace.length; i++) {
+        hash = (hash << 5) - hash + namespace.charCodeAt(i);
+        hash |= 0;
+      }
+      return createDebug.colors[Math.abs(hash) % createDebug.colors.length];
+    }
+    createDebug.selectColor = selectColor;
+    function createDebug(namespace) {
+      let prevTime;
+      let enableOverride = null;
+      let namespacesCache;
+      let enabledCache;
+      function debug2(...args) {
+        if (!debug2.enabled) {
+          return;
+        }
+        const self2 = debug2;
+        const curr = Number(/* @__PURE__ */ new Date());
+        const ms2 = curr - (prevTime || curr);
+        self2.diff = ms2;
+        self2.prev = prevTime;
+        self2.curr = curr;
+        prevTime = curr;
+        args[0] = createDebug.coerce(args[0]);
+        if (typeof args[0] !== "string") {
+          args.unshift("%O");
+        }
+        let index = 0;
+        args[0] = args[0].replace(/%([a-zA-Z%])/g, (match, format) => {
+          if (match === "%%") {
+            return "%";
+          }
+          index++;
+          const formatter = createDebug.formatters[format];
+          if (typeof formatter === "function") {
+            const val = args[index];
+            match = formatter.call(self2, val);
+            args.splice(index, 1);
+            index--;
+          }
+          return match;
+        });
+        createDebug.formatArgs.call(self2, args);
+        const logFn = self2.log || createDebug.log;
+        logFn.apply(self2, args);
+      }
+      debug2.namespace = namespace;
+      debug2.useColors = createDebug.useColors();
+      debug2.color = createDebug.selectColor(namespace);
+      debug2.extend = extend2;
+      debug2.destroy = createDebug.destroy;
+      Object.defineProperty(debug2, "enabled", {
+        enumerable: true,
+        configurable: false,
+        get: () => {
+          if (enableOverride !== null) {
+            return enableOverride;
+          }
+          if (namespacesCache !== createDebug.namespaces) {
+            namespacesCache = createDebug.namespaces;
+            enabledCache = createDebug.enabled(namespace);
+          }
+          return enabledCache;
+        },
+        set: (v) => {
+          enableOverride = v;
+        }
+      });
+      if (typeof createDebug.init === "function") {
+        createDebug.init(debug2);
+      }
+      return debug2;
+    }
+    function extend2(namespace, delimiter) {
+      const newDebug = createDebug(this.namespace + (typeof delimiter === "undefined" ? ":" : delimiter) + namespace);
+      newDebug.log = this.log;
+      return newDebug;
+    }
+    function enable(namespaces) {
+      createDebug.save(namespaces);
+      createDebug.namespaces = namespaces;
+      createDebug.names = [];
+      createDebug.skips = [];
+      const split = (typeof namespaces === "string" ? namespaces : "").trim().replace(/\s+/g, ",").split(",").filter(Boolean);
+      for (const ns of split) {
+        if (ns[0] === "-") {
+          createDebug.skips.push(ns.slice(1));
+        } else {
+          createDebug.names.push(ns);
+        }
+      }
+    }
+    function matchesTemplate(search, template) {
+      let searchIndex = 0;
+      let templateIndex = 0;
+      let starIndex = -1;
+      let matchIndex = 0;
+      while (searchIndex < search.length) {
+        if (templateIndex < template.length && (template[templateIndex] === search[searchIndex] || template[templateIndex] === "*")) {
+          if (template[templateIndex] === "*") {
+            starIndex = templateIndex;
+            matchIndex = searchIndex;
+            templateIndex++;
+          } else {
+            searchIndex++;
+            templateIndex++;
+          }
+        } else if (starIndex !== -1) {
+          templateIndex = starIndex + 1;
+          matchIndex++;
+          searchIndex = matchIndex;
+        } else {
+          return false;
+        }
+      }
+      while (templateIndex < template.length && template[templateIndex] === "*") {
+        templateIndex++;
+      }
+      return templateIndex === template.length;
+    }
+    function disable() {
+      const namespaces = [
+        ...createDebug.names,
+        ...createDebug.skips.map((namespace) => "-" + namespace)
+      ].join(",");
+      createDebug.enable("");
+      return namespaces;
+    }
+    function enabled(name) {
+      for (const skip of createDebug.skips) {
+        if (matchesTemplate(name, skip)) {
+          return false;
+        }
+      }
+      for (const ns of createDebug.names) {
+        if (matchesTemplate(name, ns)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    function coerce(val) {
+      if (val instanceof Error) {
+        return val.stack || val.message;
+      }
+      return val;
+    }
+    function destroy2() {
+      console.warn("Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.");
+    }
+    createDebug.enable(createDebug.load());
+    return createDebug;
+  }
+  common = setup;
+  return common;
+}
+var hasRequiredBrowser;
+function requireBrowser() {
+  if (hasRequiredBrowser) return browser.exports;
+  hasRequiredBrowser = 1;
+  (function(module, exports$1) {
+    exports$1.formatArgs = formatArgs;
+    exports$1.save = save;
+    exports$1.load = load2;
+    exports$1.useColors = useColors;
+    exports$1.storage = localstorage();
+    exports$1.destroy = /* @__PURE__ */ (() => {
+      let warned = false;
+      return () => {
+        if (!warned) {
+          warned = true;
+          console.warn("Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`.");
+        }
+      };
+    })();
+    exports$1.colors = [
+      "#0000CC",
+      "#0000FF",
+      "#0033CC",
+      "#0033FF",
+      "#0066CC",
+      "#0066FF",
+      "#0099CC",
+      "#0099FF",
+      "#00CC00",
+      "#00CC33",
+      "#00CC66",
+      "#00CC99",
+      "#00CCCC",
+      "#00CCFF",
+      "#3300CC",
+      "#3300FF",
+      "#3333CC",
+      "#3333FF",
+      "#3366CC",
+      "#3366FF",
+      "#3399CC",
+      "#3399FF",
+      "#33CC00",
+      "#33CC33",
+      "#33CC66",
+      "#33CC99",
+      "#33CCCC",
+      "#33CCFF",
+      "#6600CC",
+      "#6600FF",
+      "#6633CC",
+      "#6633FF",
+      "#66CC00",
+      "#66CC33",
+      "#9900CC",
+      "#9900FF",
+      "#9933CC",
+      "#9933FF",
+      "#99CC00",
+      "#99CC33",
+      "#CC0000",
+      "#CC0033",
+      "#CC0066",
+      "#CC0099",
+      "#CC00CC",
+      "#CC00FF",
+      "#CC3300",
+      "#CC3333",
+      "#CC3366",
+      "#CC3399",
+      "#CC33CC",
+      "#CC33FF",
+      "#CC6600",
+      "#CC6633",
+      "#CC9900",
+      "#CC9933",
+      "#CCCC00",
+      "#CCCC33",
+      "#FF0000",
+      "#FF0033",
+      "#FF0066",
+      "#FF0099",
+      "#FF00CC",
+      "#FF00FF",
+      "#FF3300",
+      "#FF3333",
+      "#FF3366",
+      "#FF3399",
+      "#FF33CC",
+      "#FF33FF",
+      "#FF6600",
+      "#FF6633",
+      "#FF9900",
+      "#FF9933",
+      "#FFCC00",
+      "#FFCC33"
+    ];
+    function useColors() {
+      if (typeof window !== "undefined" && window.process && (window.process.type === "renderer" || window.process.__nwjs)) {
+        return true;
+      }
+      if (typeof navigator !== "undefined" && navigator.userAgent && navigator.userAgent.toLowerCase().match(/(edge|trident)\/(\d+)/)) {
+        return false;
+      }
+      let m;
+      return typeof document !== "undefined" && document.documentElement && document.documentElement.style && document.documentElement.style.WebkitAppearance || // Is firebug? http://stackoverflow.com/a/398120/376773
+      typeof window !== "undefined" && window.console && (window.console.firebug || window.console.exception && window.console.table) || // Is firefox >= v31?
+      // https://developer.mozilla.org/en-US/docs/Tools/Web_Console#Styling_messages
+      typeof navigator !== "undefined" && navigator.userAgent && (m = navigator.userAgent.toLowerCase().match(/firefox\/(\d+)/)) && parseInt(m[1], 10) >= 31 || // Double check webkit in userAgent just in case we are in a worker
+      typeof navigator !== "undefined" && navigator.userAgent && navigator.userAgent.toLowerCase().match(/applewebkit\/(\d+)/);
+    }
+    function formatArgs(args) {
+      args[0] = (this.useColors ? "%c" : "") + this.namespace + (this.useColors ? " %c" : " ") + args[0] + (this.useColors ? "%c " : " ") + "+" + module.exports.humanize(this.diff);
+      if (!this.useColors) {
+        return;
+      }
+      const c = "color: " + this.color;
+      args.splice(1, 0, c, "color: inherit");
+      let index = 0;
+      let lastC = 0;
+      args[0].replace(/%[a-zA-Z%]/g, (match) => {
+        if (match === "%%") {
+          return;
+        }
+        index++;
+        if (match === "%c") {
+          lastC = index;
+        }
+      });
+      args.splice(lastC, 0, c);
+    }
+    exports$1.log = console.debug || console.log || (() => {
+    });
+    function save(namespaces) {
+      try {
+        if (namespaces) {
+          exports$1.storage.setItem("debug", namespaces);
+        } else {
+          exports$1.storage.removeItem("debug");
+        }
+      } catch (error) {
+      }
+    }
+    function load2() {
+      let r;
+      try {
+        r = exports$1.storage.getItem("debug") || exports$1.storage.getItem("DEBUG");
+      } catch (error) {
+      }
+      if (!r && typeof process !== "undefined" && "env" in process) {
+        r = process.env.DEBUG;
+      }
+      return r;
+    }
+    function localstorage() {
+      try {
+        return localStorage;
+      } catch (error) {
+      }
+    }
+    module.exports = requireCommon()(exports$1);
+    const { formatters } = module.exports;
+    formatters.j = function(v) {
+      try {
+        return JSON.stringify(v);
+      } catch (error) {
+        return "[UnexpectedJSONParseError]: " + error.message;
+      }
+    };
+  })(browser, browser.exports);
+  return browser.exports;
+}
+var node = { exports: {} };
+var hasRequiredNode;
+function requireNode() {
+  if (hasRequiredNode) return node.exports;
+  hasRequiredNode = 1;
+  (function(module, exports$1) {
+    const tty = require$$0$1;
+    const util2 = require$$1;
+    exports$1.init = init;
+    exports$1.log = log2;
+    exports$1.formatArgs = formatArgs;
+    exports$1.save = save;
+    exports$1.load = load2;
+    exports$1.useColors = useColors;
+    exports$1.destroy = util2.deprecate(
+      () => {
+      },
+      "Instance method `debug.destroy()` is deprecated and no longer does anything. It will be removed in the next major version of `debug`."
+    );
+    exports$1.colors = [6, 2, 3, 4, 5, 1];
+    try {
+      const supportsColor = require("supports-color");
+      if (supportsColor && (supportsColor.stderr || supportsColor).level >= 2) {
+        exports$1.colors = [
+          20,
+          21,
+          26,
+          27,
+          32,
+          33,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          56,
+          57,
+          62,
+          63,
+          68,
+          69,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          80,
+          81,
+          92,
+          93,
+          98,
+          99,
+          112,
+          113,
+          128,
+          129,
+          134,
+          135,
+          148,
+          149,
+          160,
+          161,
+          162,
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          178,
+          179,
+          184,
+          185,
+          196,
+          197,
+          198,
+          199,
+          200,
+          201,
+          202,
+          203,
+          204,
+          205,
+          206,
+          207,
+          208,
+          209,
+          214,
+          215,
+          220,
+          221
+        ];
+      }
+    } catch (error) {
+    }
+    exports$1.inspectOpts = Object.keys(process.env).filter((key) => {
+      return /^debug_/i.test(key);
+    }).reduce((obj, key) => {
+      const prop = key.substring(6).toLowerCase().replace(/_([a-z])/g, (_, k) => {
+        return k.toUpperCase();
+      });
+      let val = process.env[key];
+      if (/^(yes|on|true|enabled)$/i.test(val)) {
+        val = true;
+      } else if (/^(no|off|false|disabled)$/i.test(val)) {
+        val = false;
+      } else if (val === "null") {
+        val = null;
+      } else {
+        val = Number(val);
+      }
+      obj[prop] = val;
+      return obj;
+    }, {});
+    function useColors() {
+      return "colors" in exports$1.inspectOpts ? Boolean(exports$1.inspectOpts.colors) : tty.isatty(process.stderr.fd);
+    }
+    function formatArgs(args) {
+      const { namespace: name, useColors: useColors2 } = this;
+      if (useColors2) {
+        const c = this.color;
+        const colorCode = "\x1B[3" + (c < 8 ? c : "8;5;" + c);
+        const prefix = `  ${colorCode};1m${name} \x1B[0m`;
+        args[0] = prefix + args[0].split("\n").join("\n" + prefix);
+        args.push(colorCode + "m+" + module.exports.humanize(this.diff) + "\x1B[0m");
+      } else {
+        args[0] = getDate() + name + " " + args[0];
+      }
+    }
+    function getDate() {
+      if (exports$1.inspectOpts.hideDate) {
+        return "";
+      }
+      return (/* @__PURE__ */ new Date()).toISOString() + " ";
+    }
+    function log2(...args) {
+      return process.stderr.write(util2.formatWithOptions(exports$1.inspectOpts, ...args) + "\n");
+    }
+    function save(namespaces) {
+      if (namespaces) {
+        process.env.DEBUG = namespaces;
+      } else {
+        delete process.env.DEBUG;
+      }
+    }
+    function load2() {
+      return process.env.DEBUG;
+    }
+    function init(debug2) {
+      debug2.inspectOpts = {};
+      const keys = Object.keys(exports$1.inspectOpts);
+      for (let i = 0; i < keys.length; i++) {
+        debug2.inspectOpts[keys[i]] = exports$1.inspectOpts[keys[i]];
+      }
+    }
+    module.exports = requireCommon()(exports$1);
+    const { formatters } = module.exports;
+    formatters.o = function(v) {
+      this.inspectOpts.colors = this.useColors;
+      return util2.inspect(v, this.inspectOpts).split("\n").map((str) => str.trim()).join(" ");
+    };
+    formatters.O = function(v) {
+      this.inspectOpts.colors = this.useColors;
+      return util2.inspect(v, this.inspectOpts);
+    };
+  })(node, node.exports);
+  return node.exports;
+}
+var hasRequiredSrc;
+function requireSrc() {
+  if (hasRequiredSrc) return src.exports;
+  hasRequiredSrc = 1;
+  if (typeof process === "undefined" || process.type === "renderer" || process.browser === true || process.__nwjs) {
+    src.exports = requireBrowser();
+  } else {
+    src.exports = requireNode();
+  }
+  return src.exports;
+}
 var debug$1;
 var debug_1 = function() {
   if (!debug$1) {
     try {
-      debug$1 = require("debug")("follow-redirects");
+      debug$1 = requireSrc()("follow-redirects");
     } catch (error) {
     }
     if (typeof debug$1 !== "function") {
@@ -14366,7 +15086,7 @@ const readBlob = async function* (blob) {
   }
 };
 const BOUNDARY_ALPHABET = platform.ALPHABET.ALPHA_DIGIT + "-_";
-const textEncoder = typeof TextEncoder === "function" ? new TextEncoder() : new util$3.TextEncoder();
+const textEncoder = typeof TextEncoder === "function" ? new TextEncoder() : new require$$1.TextEncoder();
 const CRLF = "\r\n";
 const CRLF_BYTES = textEncoder.encode(CRLF);
 const CRLF_BYTES_COUNT = 2;
@@ -14827,7 +15547,7 @@ class Http2Sessions {
       let len = authoritySessions.length;
       for (let i = 0; i < len; i++) {
         const [sessionHandle, sessionOptions] = authoritySessions[i];
-        if (!sessionHandle.destroyed && !sessionHandle.closed && util$3.isDeepStrictEqual(sessionOptions, options)) {
+        if (!sessionHandle.destroyed && !sessionHandle.closed && require$$1.isDeepStrictEqual(sessionOptions, options)) {
           return sessionHandle;
         }
       }
@@ -15190,7 +15910,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
       setFormDataHeaders$1(headers, data.getHeaders(), own2("formDataHeaderPolicy"));
       if (!headers.hasContentLength()) {
         try {
-          const knownLength = await util$3.promisify(data.getLength).call(data);
+          const knownLength = await require$$1.promisify(data.getLength).call(data);
           Number.isFinite(knownLength) && knownLength >= 0 && headers.setContentLength(knownLength);
         } catch (e) {
         }
@@ -17096,6 +17816,57 @@ async function getCloudId(accessToken) {
   });
   return res.data[0].id;
 }
+const workspaceService = {
+  /** Returns all workspaces as safe views (no accountId). */
+  list() {
+    const store = workspaceStore.getAll();
+    return store.workspaces.map((w) => ({
+      id: w.id,
+      name: w.name,
+      projectKey: w.projectKey,
+      projectName: w.projectName,
+      isActive: w.id === store.activeWorkspaceId
+    }));
+  },
+  /** Returns the active workspace as a safe view, or null. */
+  getActive() {
+    const ws = workspaceStore.getActive();
+    if (!ws) return null;
+    return {
+      id: ws.id,
+      name: ws.name,
+      projectKey: ws.projectKey,
+      projectName: ws.projectName
+    };
+  },
+  setActive(id) {
+    const ws = workspaceStore.find(id);
+    if (!ws) throw new Error(`Workspace not found: ${id}`);
+    workspaceStore.setActive(id);
+  },
+  async remove(id) {
+    const store = workspaceStore.getAll();
+    const ws = workspaceStore.find(id);
+    if (!ws) return { success: true };
+    const usedElsewhere = store.workspaces.some(
+      (w) => w.id !== id && w.accountId === ws.accountId
+    );
+    if (!usedElsewhere) {
+      await deleteTokens(ws.accountId);
+    }
+    workspaceStore.remove(id);
+    return { success: true };
+  },
+  create(data) {
+    const ws = {
+      id: `ws_${Date.now()}`,
+      ...data,
+      createdAt: Date.now()
+    };
+    workspaceStore.add(ws);
+    return { workspaceId: ws.id };
+  }
+};
 const isDev = process.env.NODE_ENV !== "production";
 async function getJiraIssues(accessToken, cloudId, projectKey) {
   var _a, _b, _c;
@@ -17143,95 +17914,96 @@ async function getProjects(accessToken, cloudId) {
     throw err;
   }
 }
-let activeWorkspace = null;
-function requireActiveWorkspace() {
-  if (!activeWorkspace) throw new Error("No active workspace. Activate one first.");
-  return activeWorkspace;
-}
-const log$1 = {
-  info: (...args) => process.env.NODE_ENV !== "production" && console.log("[IPC]", ...args),
-  error: (...args) => process.env.NODE_ENV !== "production" && console.error("[IPC]", ...args)
+let pendingAccountId = null;
+const jiraOnboardingService = {
+  async connect() {
+    pendingAccountId = `jira_account_${Date.now()}`;
+    const code = await startJiraAuth();
+    const tokens = await exchangeCode(code);
+    await storeTokens(pendingAccountId, tokens);
+    return { success: true };
+  },
+  async getProjects() {
+    if (!pendingAccountId) {
+      throw new Error("No pending account");
+    }
+    const token = await getValidAccessToken(pendingAccountId);
+    const cloudId = await getCloudId(token);
+    const projects = await getProjects(token, cloudId);
+    return { projects };
+  },
+  consumeAccountId() {
+    if (!pendingAccountId) {
+      throw new Error("No pending account");
+    }
+    const id = pendingAccountId;
+    pendingAccountId = null;
+    return id;
+  }
 };
+function handle(fn) {
+  return async (_e, ...args) => {
+    try {
+      const result = await fn(...args);
+      return { success: true, ...result ?? {} };
+    } catch (err) {
+      return { success: false, error: err.message ?? String(err) };
+    }
+  };
+}
 function registerIpcHandlers() {
-  ipcMain.handle("ping", async () => "pong");
-  ipcMain.handle("workspace:activate", (_event, workspace) => {
-    activeWorkspace = workspace;
-  });
-  ipcMain.handle("workspace:deactivate", () => {
-    activeWorkspace = null;
-  });
-  ipcMain.handle("jira:getIssues", async () => {
-    try {
-      const { accountId, projectKey } = requireActiveWorkspace();
-      log$1.info("getIssues → accountId:", accountId, "projectKey:", projectKey);
-      const token = await getValidAccessToken(accountId);
+  ipcMain.handle("ping", () => "pong");
+  ipcMain.handle("workspace:list", () => workspaceService.list());
+  ipcMain.handle("workspace:getActive", () => workspaceService.getActive());
+  ipcMain.handle(
+    "workspace:setActive",
+    handle((id) => workspaceService.setActive(id))
+  );
+  ipcMain.handle(
+    "workspace:remove",
+    handle((id) => workspaceService.remove(id))
+  );
+  ipcMain.handle(
+    "workspace:create",
+    handle((payload) => {
+      const accountId = jiraOnboardingService.consumeAccountId();
+      return workspaceService.create({ ...payload, accountId });
+    })
+  );
+  ipcMain.handle(
+    "jira:connect",
+    handle(() => jiraOnboardingService.connect())
+  );
+  ipcMain.handle(
+    "jira:getProjectsForNewAccount",
+    handle(() => jiraOnboardingService.getProjects())
+  );
+  ipcMain.handle(
+    "jira:getIssues",
+    handle(async () => {
+      const ws = workspaceStore.getActive();
+      if (!ws) throw new Error("No active workspace");
+      const token = await getValidAccessToken(ws.accountId);
       const cloudId = await getCloudId(token);
-      log$1.info("getIssues → cloudId:", cloudId);
-      const issues = await getJiraIssues(token, cloudId, projectKey);
-      log$1.info("getIssues → returned", issues.length, "issues");
-      return { success: true, issues };
-    } catch (err) {
-      log$1.error("getIssues failed:", err.message);
-      log$1.error("getIssues stack:", err.stack);
-      return { success: false, error: err.message };
-    }
-  });
-  ipcMain.handle("jira:getProjects", async () => {
-    try {
-      const { accountId } = requireActiveWorkspace();
-      const token = await getValidAccessToken(accountId);
-      const cloudId = await getCloudId(token);
-      const projects = await getProjects(token, cloudId);
-      return { success: true, projects };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  });
-  ipcMain.handle("jira:connect", async (_event, accountId) => {
-    try {
-      const code = await startJiraAuth();
-      const tokens = await exchangeCode(code);
-      await storeTokens(accountId, tokens);
-      return { success: true };
-    } catch (err) {
-      console.error("[jira:connect] failed:", err.message);
-      return { success: false, error: err.message };
-    }
-  });
-  ipcMain.handle("jira:getProjectsForAccount", async (_event, accountId) => {
-    try {
-      const token = await getValidAccessToken(accountId);
-      const cloudId = await getCloudId(token);
-      const projects = await getProjects(token, cloudId);
-      return { success: true, projects };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  });
-  ipcMain.handle("jira:isConnected", async (_event, accountId) => {
-    const tokens = await getTokens(accountId);
-    return !!tokens;
-  });
-  ipcMain.handle("jira:disconnect", async (_event, accountId) => {
-    try {
-      await deleteTokens(accountId);
-      if ((activeWorkspace == null ? void 0 : activeWorkspace.accountId) === accountId) activeWorkspace = null;
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
-  });
-  ipcMain.handle("jira:listAccounts", async () => {
-    try {
-      return { success: true, accounts: await listAccounts() };
-    } catch (err) {
-      return { success: false, error: err.message, accounts: [] };
-    }
-  });
+      const issues = await getJiraIssues(token, cloudId, ws.projectKey);
+      return { issues };
+    })
+  );
+  ipcMain.handle(
+    "jira:listAccounts",
+    handle(async () => ({ accounts: await listAccounts() }))
+  );
+  ipcMain.handle(
+    "jira:isConnected",
+    handle(async () => {
+      const accounts = await listAccounts();
+      return { connected: accounts.length > 0 };
+    })
+  );
 }
 var main = {};
 const fs = require$$6;
-const path = require$$1;
+const path = require$$1$1;
 function log(message) {
   console.log(`[dotenv][DEBUG] ${message}`);
 }
@@ -17239,10 +18011,10 @@ const NEWLINE = "\n";
 const RE_INI_KEY_VAL = /^\s*([\w.-]+)\s*=\s*(.*)?\s*$/;
 const RE_NEWLINES = /\\n/g;
 const NEWLINES_MATCH = /\r\n|\n|\r/;
-function parse(src, options) {
+function parse(src2, options) {
   const debug2 = Boolean(options && options.debug);
   const obj = {};
-  src.toString().split(NEWLINES_MATCH).forEach(function(line, idx) {
+  src2.toString().split(NEWLINES_MATCH).forEach(function(line, idx) {
     const keyValueArr = line.match(RE_INI_KEY_VAL);
     if (keyValueArr != null) {
       const key = keyValueArr[1];

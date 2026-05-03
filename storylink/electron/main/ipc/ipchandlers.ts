@@ -1,145 +1,90 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // electron/main/ipc/ipchandlers.ts
 import { ipcMain } from 'electron';
-import {
-    startJiraAuth,
-    exchangeCode,
-    storeTokens,
-    getValidAccessToken,
-    getCloudId,
-    getTokens,
-    deleteTokens,
-    listAccounts,
-} from '../auth/jira.auth';
-import {
-    getJiraIssues,
-    getProjects,
-} from '../services/jira.services';
+import { workspaceService } from '../services/workspace.service';
+import { jiraOnboardingService } from '../services/jiraOnboarding.service';
+import { getValidAccessToken, getCloudId, listAccounts } from '../auth/jira.auth';
+import { getJiraIssues } from '../services/jira.services';
+import { workspaceStore } from '../store/workspace.store';
 
-// ── Active workspace ──────────────────────────────────────────────────────────
-// The main process owns this. Set once when user activates a workspace.
-// All data handlers derive what they need from here — callers pass zero params.
-
-type ActiveWorkspace = {
-    id: string;
-    name: string;
-    accountId: string;
-    projectKey: string;
-    projectName: string;
-};
-
-let activeWorkspace: ActiveWorkspace | null = null;
-
-function requireActiveWorkspace(): ActiveWorkspace {
-    if (!activeWorkspace) throw new Error('No active workspace. Activate one first.');
-    return activeWorkspace;
+/** Wraps a handler so it always returns { success, ...result } or { success: false, error }. */
+function handle(fn: (...args: any[]) => any) {
+    return async (_e: Electron.IpcMainInvokeEvent, ...args: any[]) => {
+        try {
+            const result = await fn(...args);
+            return { success: true, ...(result ?? {}) };
+        } catch (err: any) {
+            return { success: false, error: err.message ?? String(err) };
+        }
+    };
 }
 
-const log = {
-    info: (...args: any[]) => process.env.NODE_ENV !== 'production' && console.log('[IPC]', ...args),
-    error: (...args: any[]) => process.env.NODE_ENV !== 'production' && console.error('[IPC]', ...args),
-};
+export function registerIpcHandlers(): void {
 
-// ── Handlers ──────────────────────────────────────────────────────────────────
+    ipcMain.handle('ping', () => 'pong');
 
-export function registerIpcHandlers() {
+    // ── Workspace ─────────────────────────────────────────────────────────────
 
-    ipcMain.handle('ping', async () => 'pong');
+    // Returns WorkspaceView[]  — no accountId
+    ipcMain.handle('workspace:list', () => workspaceService.list());
 
-    // ── Workspace activation — the one call that carries data ─────────────────
-    // After this, all data calls are zero-param.
-    ipcMain.handle('workspace:activate', (_event, workspace: ActiveWorkspace) => {
-        activeWorkspace = workspace;
-    });
+    // Returns ActiveWorkspaceView | null — no accountId
+    ipcMain.handle('workspace:getActive', () => workspaceService.getActive());
 
-    ipcMain.handle('workspace:deactivate', () => {
-        activeWorkspace = null;
-    });
+    ipcMain.handle('workspace:setActive',
+        handle((id: string) => workspaceService.setActive(id))
+    );
 
-    // ── Zero-param data calls — everything resolved from activeWorkspace ───────
+    ipcMain.handle('workspace:remove',
+        handle((id: string) => workspaceService.remove(id))
+    );
 
-    ipcMain.handle('jira:getIssues', async () => {
-        try {
-            const { accountId, projectKey } = requireActiveWorkspace();
-            log.info('getIssues → accountId:', accountId, 'projectKey:', projectKey);
+    // payload: { name, projectKey, projectName }  — renderer never sends accountId
+    ipcMain.handle('workspace:create',
+        handle((payload: { name: string; projectKey: string; projectName: string }) => {
+            // accountId is fetched from the pending onboarding session — never from renderer
+            const accountId = jiraOnboardingService.consumeAccountId();
+            return workspaceService.create({ ...payload, accountId });
+        })
+    );
 
-            const token = await getValidAccessToken(accountId);
+    // ── Jira onboarding ───────────────────────────────────────────────────────
+
+    ipcMain.handle('jira:connect',
+        handle(() => jiraOnboardingService.connect())
+    );
+
+    ipcMain.handle('jira:getProjectsForNewAccount',
+        handle(() => jiraOnboardingService.getProjects())
+    );
+
+    // ── Issues ────────────────────────────────────────────────────────────────
+
+    ipcMain.handle('jira:getIssues',
+        handle(async () => {
+            const ws = workspaceStore.getActive();
+            if (!ws) throw new Error('No active workspace');
+
+            const token = await getValidAccessToken(ws.accountId);
             const cloudId = await getCloudId(token);
-            log.info('getIssues → cloudId:', cloudId);
+            const issues = await getJiraIssues(token, cloudId, ws.projectKey);
 
-            const issues = await getJiraIssues(token, cloudId, projectKey);
-            log.info('getIssues → returned', issues.length, 'issues');
+            return { issues };
+        })
+    );
 
-            return { success: true, issues };
-        } catch (err: any) {
-            log.error('getIssues failed:', err.message);
-            log.error('getIssues stack:', err.stack);
-            return { success: false, error: err.message };
-        }
-    });
+    // ── Accounts ──────────────────────────────────────────────────────────────
 
-    // Used when the active workspace is set and user navigates to project list
-    ipcMain.handle('jira:getProjects', async () => {
-        try {
-            const { accountId } = requireActiveWorkspace();
-            const token = await getValidAccessToken(accountId);
-            const cloudId = await getCloudId(token);
-            const projects = await getProjects(token, cloudId);
-            return { success: true, projects };
-        } catch (err: any) {
-            return { success: false, error: err.message };
-        }
-    });
+    ipcMain.handle('jira:listAccounts',
+        handle(async () => ({ accounts: await listAccounts() }))
+    );
 
-    // ── Account management — explicit accountId required ──────────────────────
-    // These deal with accounts that may not be active yet (setup wizard, removal)
+    // ── Connection check ──────────────────────────────────────────────────────
+    // Derived from whether any accounts exist in the token store.
 
-    // Step 1 of Add Workspace: OAuth for a brand-new account
-    ipcMain.handle('jira:connect', async (_event, accountId: string) => {
-        try {
-            const code = await startJiraAuth();
-            const tokens = await exchangeCode(code);
-            await storeTokens(accountId, tokens);
-            return { success: true };
-        } catch (err: any) {
-            console.error('[jira:connect] failed:', err.message);
-            return { success: false, error: err.message };
-        }
-    });
-
-    // Step 2 of Add Workspace: fetch projects for the newly authed account.
-    // A separate handler from jira:getProjects because no workspace is active yet.
-    ipcMain.handle('jira:getProjectsForAccount', async (_event, accountId: string) => {
-        try {
-            const token = await getValidAccessToken(accountId);
-            const cloudId = await getCloudId(token);
-            const projects = await getProjects(token, cloudId);
-            return { success: true, projects };
-        } catch (err: any) {
-            return { success: false, error: err.message };
-        }
-    });
-
-    ipcMain.handle('jira:isConnected', async (_event, accountId: string) => {
-        const tokens = await getTokens(accountId);
-        return !!tokens;
-    });
-
-    ipcMain.handle('jira:disconnect', async (_event, accountId: string) => {
-        try {
-            await deleteTokens(accountId);
-            if (activeWorkspace?.accountId === accountId) activeWorkspace = null;
-            return { success: true };
-        } catch (err: any) {
-            return { success: false, error: err.message };
-        }
-    });
-
-    ipcMain.handle('jira:listAccounts', async () => {
-        try {
-            return { success: true, accounts: await listAccounts() };
-        } catch (err: any) {
-            return { success: false, error: err.message, accounts: [] };
-        }
-    });
+    ipcMain.handle('jira:isConnected',
+        handle(async () => {
+            const accounts = await listAccounts();
+            return { connected: accounts.length > 0 };
+        })
+    );
 }

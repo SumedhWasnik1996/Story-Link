@@ -1,15 +1,13 @@
-// src/renderer/pages/Workspaces.tsx
+// src/renderer/pages/Workspace.tsx
 import { useState } from 'react';
 import { useWorkspaceStore } from '../../store/Workspace.store';
 import AddWorkspaceModal from '../components/WorkspaceModal';
 
 export default function Workspaces() {
-    const {
-        workspaces,
-        activeWorkspaceId,
-        setActiveWorkspace,
-        removeWorkspace,
-    } = useWorkspaceStore();
+    const workspaces = useWorkspaceStore(s => s.workspaces);
+    const activeWorkspace = useWorkspaceStore(s => s.activeWorkspace);
+    const setActive = useWorkspaceStore(s => s.setActive);       // fixed: was setActiveWorkspace
+    const removeWorkspace = useWorkspaceStore(s => s.removeWorkspace);
 
     const [showModal, setShowModal] = useState(false);
     const [removingId, setRemovingId] = useState<string | null>(null);
@@ -24,7 +22,12 @@ export default function Workspaces() {
         <div style={{ padding: '24px', maxWidth: '640px' }}>
 
             {/* Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: '24px',
+            }}>
                 <div>
                     <h2 style={{ margin: '0 0 4px', color: 'var(--text)' }}>Workspaces</h2>
                     <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
@@ -55,7 +58,7 @@ export default function Workspaces() {
 
             {/* Workspace cards */}
             {workspaces.map(ws => {
-                const isActive = ws.id === activeWorkspaceId;
+                const isActive = ws.id === activeWorkspace?.id;   // derive from activeWorkspace
                 const isRemoving = removingId === ws.id;
 
                 return (
@@ -66,43 +69,59 @@ export default function Workspaces() {
                             : '1px solid rgba(255,255,255,0.07)',
                     }}>
                         {/* Active badge */}
-                        {isActive && (
-                            <div style={activeBadge}>Active</div>
-                        )}
+                        {isActive && <div style={activeBadge}>Active</div>}
 
                         {/* Workspace info */}
                         <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                marginBottom: '8px',
+                            }}>
                                 <div style={{
                                     width: '36px', height: '36px',
                                     background: isActive ? '#0052CC' : 'rgba(255,255,255,0.08)',
                                     borderRadius: '8px',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    fontSize: '16px', fontWeight: 700, color: '#fff',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '16px',
+                                    fontWeight: 700,
+                                    color: '#fff',
                                     flexShrink: 0,
                                 }}>
                                     {ws.name.charAt(0).toUpperCase()}
                                 </div>
                                 <div>
-                                    <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '15px' }}>
+                                    <div style={{
+                                        fontWeight: 600,
+                                        color: 'var(--text)',
+                                        fontSize: '15px',
+                                    }}>
                                         {ws.name}
                                     </div>
                                     <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                        {ws.projectName} · <span style={{ fontFamily: 'monospace' }}>{ws.projectKey}</span>
+                                        {ws.projectName} ·{' '}
+                                        <span style={{ fontFamily: 'monospace' }}>
+                                            {ws.projectKey}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
-
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace', opacity: 0.6 }}>
-                                account: {ws.accountId}
-                            </div>
+                            {/* accountId is intentionally NOT rendered here */}
                         </div>
 
                         {/* Actions */}
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '16px' }}>
+                        <div style={{
+                            display: 'flex',
+                            gap: '8px',
+                            alignItems: 'center',
+                            marginTop: '16px',
+                        }}>
                             {!isActive && (
                                 <button
-                                    onClick={() => setActiveWorkspace(ws.id)}
+                                    onClick={() => setActive(ws.id)}
                                     style={activateBtn}
                                 >
                                     Set Active
@@ -113,7 +132,7 @@ export default function Workspaces() {
                                 disabled={isRemoving}
                                 style={removeBtn}
                             >
-                                {isRemoving ? 'Removing...' : 'Remove'}
+                                {isRemoving ? 'Removing…' : 'Remove'}
                             </button>
                         </div>
                     </div>
