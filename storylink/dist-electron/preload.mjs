@@ -32,3 +32,7 @@ electron.contextBridge.exposeInMainWorld("jira", {
   listAccounts: () => electron.ipcRenderer.invoke("jira:listAccounts"),
   isConnected: () => electron.ipcRenderer.invoke("jira:isConnected")
 });
+electron.contextBridge.exposeInMainWorld("github", {
+  connect: () => electron.ipcRenderer.invoke("github:connect"),
+  getReposForNewAccount: () => electron.ipcRenderer.invoke("github:getReposForNewAccount")
+});

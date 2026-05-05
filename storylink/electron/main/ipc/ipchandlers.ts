@@ -2,11 +2,11 @@
 import { ipcMain } from 'electron';
 import { workspaceService } from '../services/workspace.service';
 import { jiraOnboardingService } from '../services/jiraOnboarding.service';
+import { githubOnboardingService } from '../services/githubOnboarding.service';
 import { getValidAccessToken, getCloudId, listAccounts } from '../auth/jira.auth';
 import { getJiraIssues } from '../services/jira.services';
 import { workspaceStore } from '../store/workspace.store';
 
-/** Wraps a handler so it always returns { success, ...result } or { success: false, error }. */
 function handle(fn: (...args: any[]) => any) {
     return async (_e: Electron.IpcMainInvokeEvent, ...args: any[]) => {
         try {
@@ -24,10 +24,7 @@ export function registerIpcHandlers(): void {
 
     // ── Workspace ─────────────────────────────────────────────────────────────
 
-    // Returns WorkspaceView[]  — no accountId
     ipcMain.handle('workspace:list', () => workspaceService.list());
-
-    // Returns ActiveWorkspaceView | null — no accountId
     ipcMain.handle('workspace:getActive', () => workspaceService.getActive());
 
     ipcMain.handle('workspace:setActive',
@@ -38,12 +35,24 @@ export function registerIpcHandlers(): void {
         handle((id: string) => workspaceService.remove(id))
     );
 
-    // payload: { name, projectKey, projectName }  — renderer never sends accountId
+    // Renderer sends only display data — both accountIds are resolved
+    // server-side from the pending onboarding sessions.
     ipcMain.handle('workspace:create',
-        handle((payload: { name: string; projectKey: string; projectName: string }) => {
-            // accountId is fetched from the pending onboarding session — never from renderer
+        handle((payload: {
+            name: string;
+            projectKey: string;
+            projectName: string;
+            gitRepoFullName: string;
+            gitRepoId: number;
+        }) => {
             const accountId = jiraOnboardingService.consumeAccountId();
-            return workspaceService.create({ ...payload, accountId });
+            const gitAccountId = githubOnboardingService.consumeAccountId();
+
+            return workspaceService.create({
+                ...payload,
+                accountId,
+                gitAccountId,
+            });
         })
     );
 
@@ -57,7 +66,17 @@ export function registerIpcHandlers(): void {
         handle(() => jiraOnboardingService.getProjects())
     );
 
-    // ── Issues ────────────────────────────────────────────────────────────────
+    // ── GitHub onboarding ─────────────────────────────────────────────────────
+
+    ipcMain.handle('github:connect',
+        handle(() => githubOnboardingService.connect())
+    );
+
+    ipcMain.handle('github:getReposForNewAccount',
+        handle(() => githubOnboardingService.getRepos())
+    );
+
+    // ── Jira issues ───────────────────────────────────────────────────────────
 
     ipcMain.handle('jira:getIssues',
         handle(async () => {
@@ -72,14 +91,11 @@ export function registerIpcHandlers(): void {
         })
     );
 
-    // ── Accounts ──────────────────────────────────────────────────────────────
+    // ── Accounts / connection status ──────────────────────────────────────────
 
     ipcMain.handle('jira:listAccounts',
         handle(async () => ({ accounts: await listAccounts() }))
     );
-
-    // ── Connection check ──────────────────────────────────────────────────────
-    // Derived from whether any accounts exist in the token store.
 
     ipcMain.handle('jira:isConnected',
         handle(async () => {

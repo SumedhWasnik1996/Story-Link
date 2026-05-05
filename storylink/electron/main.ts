@@ -4,7 +4,8 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { registerIpcHandlers } from './main/ipc/ipchandlers';
-import { handleCallback } from './main/auth/jira.auth';
+import { handleCallback as handleJiraCallback } from './main/auth/jira.auth';
+import { handleGitHubCallback } from './main/auth/github.auth';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -22,10 +23,11 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
     ? path.join(process.env.APP_ROOT, 'public')
     : RENDERER_DIST;
 
-// Register custom URL scheme so the OS routes storylink:// back to this app
 if (process.defaultApp) {
     if (process.argv.length >= 2) {
-        app.setAsDefaultProtocolClient('storylink', process.execPath, [path.resolve(process.argv[1])]);
+        app.setAsDefaultProtocolClient('storylink', process.execPath, [
+            path.resolve(process.argv[1]),
+        ]);
     }
 } else {
     app.setAsDefaultProtocolClient('storylink');
@@ -65,14 +67,25 @@ app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-// macOS: OAuth callback arrives as open-url event
+/**
+ * Routes an incoming storylink:// URL to the correct OAuth handler.
+ * GitHub's handleGitHubCallback returns true if it consumed the URL,
+ * so Jira's handler is only called when GitHub didn't claim it.
+ * This means both can share the same redirect URI without conflict.
+ */
+function routeCallback(url: string) {
+    if (!handleGitHubCallback(url)) {
+        handleJiraCallback(url);
+    }
+}
+
+// macOS — OAuth callback arrives via open-url
 app.on('open-url', (event, url) => {
     event.preventDefault();
-    handleCallback(url);
+    routeCallback(url);
 });
 
-// Windows / Linux: OAuth callback arrives as a second instance with the URL
-// as a CLI argument. We forward it then quit the second instance.
+// Windows / Linux — OAuth callback arrives as second-instance CLI arg
 const gotTheLock = app.requestSingleInstanceLock();
 
 if (!gotTheLock) {
@@ -80,7 +93,7 @@ if (!gotTheLock) {
 } else {
     app.on('second-instance', (_event, commandLine) => {
         const url = commandLine.find(arg => arg.startsWith('storylink://'));
-        if (url) handleCallback(url);
+        if (url) routeCallback(url);
 
         if (win) {
             if (win.isMinimized()) win.restore();
@@ -90,6 +103,6 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(() => {
-    registerIpcHandlers(); // Must be before createWindow
+    registerIpcHandlers();
     createWindow();
 });

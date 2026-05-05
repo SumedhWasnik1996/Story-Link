@@ -6,7 +6,7 @@ import AddWorkspaceModal from '../components/WorkspaceModal';
 export default function Workspaces() {
     const workspaces = useWorkspaceStore(s => s.workspaces);
     const activeWorkspace = useWorkspaceStore(s => s.activeWorkspace);
-    const setActive = useWorkspaceStore(s => s.setActive);       // fixed: was setActiveWorkspace
+    const setActive = useWorkspaceStore(s => s.setActive);
     const removeWorkspace = useWorkspaceStore(s => s.removeWorkspace);
 
     const [showModal, setShowModal] = useState(false);
@@ -31,7 +31,7 @@ export default function Workspaces() {
                 <div>
                     <h2 style={{ margin: '0 0 4px', color: 'var(--text)' }}>Workspaces</h2>
                     <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
-                        Each workspace links a Jira account to a specific project.
+                        Each workspace links a Jira project and a GitHub repository.
                         Only one is active at a time.
                     </p>
                 </div>
@@ -48,7 +48,7 @@ export default function Workspaces() {
                         No workspaces yet
                     </p>
                     <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: '0 0 20px' }}>
-                        Add a workspace to connect a Jira account and start tracking issues.
+                        Add a workspace to connect a Jira project and GitHub repo.
                     </p>
                     <button onClick={() => setShowModal(true)} style={addBtn}>
                         + Add your first workspace
@@ -58,7 +58,7 @@ export default function Workspaces() {
 
             {/* Workspace cards */}
             {workspaces.map(ws => {
-                const isActive = ws.id === activeWorkspace?.id;   // derive from activeWorkspace
+                const isActive = ws.id === activeWorkspace?.id;
                 const isRemoving = removingId === ws.id;
 
                 return (
@@ -71,59 +71,52 @@ export default function Workspaces() {
                         {/* Active badge */}
                         {isActive && <div style={activeBadge}>Active</div>}
 
-                        {/* Workspace info */}
-                        <div style={{ flex: 1 }}>
+                        {/* Avatar + name row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
                             <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '10px',
-                                marginBottom: '8px',
+                                width: '40px', height: '40px',
+                                background: isActive ? '#0052CC' : 'rgba(255,255,255,0.08)',
+                                borderRadius: '10px',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '18px', fontWeight: 700, color: '#fff',
+                                flexShrink: 0,
                             }}>
-                                <div style={{
-                                    width: '36px', height: '36px',
-                                    background: isActive ? '#0052CC' : 'rgba(255,255,255,0.08)',
-                                    borderRadius: '8px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    fontSize: '16px',
-                                    fontWeight: 700,
-                                    color: '#fff',
-                                    flexShrink: 0,
-                                }}>
-                                    {ws.name.charAt(0).toUpperCase()}
+                                {ws.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: '15px' }}>
+                                    {ws.name}
                                 </div>
-                                <div>
-                                    <div style={{
-                                        fontWeight: 600,
-                                        color: 'var(--text)',
-                                        fontSize: '15px',
-                                    }}>
-                                        {ws.name}
-                                    </div>
-                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                                        {ws.projectName} ·{' '}
-                                        <span style={{ fontFamily: 'monospace' }}>
-                                            {ws.projectKey}
-                                        </span>
-                                    </div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                    Created workspace
                                 </div>
                             </div>
-                            {/* accountId is intentionally NOT rendered here */}
+                        </div>
+
+                        {/* Jira + GitHub connection pills */}
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                            <ConnectionPill
+                                icon="🔵"
+                                label="Jira"
+                                value={`${ws.projectName} · ${ws.projectKey}`}
+                                color="rgba(0,82,204,0.15)"
+                                borderColor="rgba(0,82,204,0.3)"
+                                textColor="#4d94ff"
+                            />
+                            <ConnectionPill
+                                icon="⬛"
+                                label="GitHub"
+                                value={ws.gitRepoFullName}
+                                color="rgba(35,134,54,0.15)"
+                                borderColor="rgba(35,134,54,0.3)"
+                                textColor="#3fb950"
+                            />
                         </div>
 
                         {/* Actions */}
-                        <div style={{
-                            display: 'flex',
-                            gap: '8px',
-                            alignItems: 'center',
-                            marginTop: '16px',
-                        }}>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                             {!isActive && (
-                                <button
-                                    onClick={() => setActive(ws.id)}
-                                    style={activateBtn}
-                                >
+                                <button onClick={() => setActive(ws.id)} style={activateBtn}>
                                     Set Active
                                 </button>
                             )}
@@ -144,6 +137,47 @@ export default function Workspaces() {
     );
 }
 
+// ── Sub-component ─────────────────────────────────────────────────────────────
+
+function ConnectionPill({
+    icon, label, value, color, borderColor, textColor,
+}: {
+    icon: string;
+    label: string;
+    value: string;
+    color: string;
+    borderColor: string;
+    textColor: string;
+}) {
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '5px 10px',
+            background: color,
+            border: `1px solid ${borderColor}`,
+            borderRadius: '20px',
+            fontSize: '12px',
+            maxWidth: '100%',
+            overflow: 'hidden',
+        }}>
+            <span style={{ fontSize: '11px' }}>{icon}</span>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
+            <span style={{
+                color: textColor,
+                fontWeight: 500,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: '180px',
+            }}>
+                {value}
+            </span>
+        </div>
+    );
+}
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const card: React.CSSProperties = {
@@ -156,8 +190,7 @@ const card: React.CSSProperties = {
 
 const activeBadge: React.CSSProperties = {
     position: 'absolute',
-    top: '14px',
-    right: '14px',
+    top: '14px', right: '14px',
     background: 'rgba(0,82,204,0.2)',
     color: '#4d94ff',
     border: '1px solid rgba(0,82,204,0.4)',

@@ -21,40 +21,36 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
 });
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
-// Renderer receives only WorkspaceView (no accountId ever crosses this bridge).
 
 contextBridge.exposeInMainWorld('workspace', {
-    list: () =>
-        ipcRenderer.invoke('workspace:list'),
-
-    getActive: () =>
-        ipcRenderer.invoke('workspace:getActive'),
-
+    list: () => ipcRenderer.invoke('workspace:list'),
+    getActive: () => ipcRenderer.invoke('workspace:getActive'),
     setActive: (workspaceId: string) =>
         ipcRenderer.invoke('workspace:setActive', workspaceId),
-
     remove: (workspaceId: string) =>
         ipcRenderer.invoke('workspace:remove', workspaceId),
-
-    create: (payload: { name: string; projectKey: string; projectName: string }) =>
-        ipcRenderer.invoke('workspace:create', payload),
+    create: (payload: {
+        name: string;
+        projectKey: string;
+        projectName: string;
+        gitRepoFullName: string;
+        gitRepoId: number;
+    }) => ipcRenderer.invoke('workspace:create', payload),
 });
 
 // ── Jira ──────────────────────────────────────────────────────────────────────
 
 contextBridge.exposeInMainWorld('jira', {
-    getIssues: () =>
-        ipcRenderer.invoke('jira:getIssues'),
+    getIssues: () => ipcRenderer.invoke('jira:getIssues'),
+    connect: () => ipcRenderer.invoke('jira:connect'),
+    getProjectsForNewAccount: () => ipcRenderer.invoke('jira:getProjectsForNewAccount'),
+    listAccounts: () => ipcRenderer.invoke('jira:listAccounts'),
+    isConnected: () => ipcRenderer.invoke('jira:isConnected'),
+});
 
-    connect: () =>
-        ipcRenderer.invoke('jira:connect'),
+// ── GitHub ────────────────────────────────────────────────────────────────────
 
-    getProjectsForNewAccount: () =>
-        ipcRenderer.invoke('jira:getProjectsForNewAccount'),
-
-    listAccounts: () =>
-        ipcRenderer.invoke('jira:listAccounts'),
-
-    isConnected: () =>
-        ipcRenderer.invoke('jira:isConnected'),
+contextBridge.exposeInMainWorld('github', {
+    connect: () => ipcRenderer.invoke('github:connect'),
+    getReposForNewAccount: () => ipcRenderer.invoke('github:getReposForNewAccount'),
 });

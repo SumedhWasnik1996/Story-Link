@@ -4,8 +4,6 @@ import path from 'node:path';
 import fs from 'node:fs';
 import type { Workspace, WorkspaceStoreShape } from '@shared/types/workspace.types';
 
-// Re-export Workspace so other electron-side files can import from here
-// instead of reaching into shared directly (optional convenience).
 export type { Workspace };
 
 function getPath(): string {
@@ -44,7 +42,6 @@ class WorkspaceStoreManager {
 
     add(workspace: Workspace): void {
         this.store.workspaces.push(workspace);
-        // Auto-activate the first workspace added
         if (!this.store.activeWorkspaceId) {
             this.store.activeWorkspaceId = workspace.id;
         }
@@ -60,9 +57,9 @@ class WorkspaceStoreManager {
     }
 
     getActive(): Workspace | null {
-        return (
-            this.store.workspaces.find(w => w.id === this.store.activeWorkspaceId) ?? null
-        );
+        return this.store.workspaces.find(
+            w => w.id === this.store.activeWorkspaceId
+        ) ?? null;
     }
 
     find(id: string): Workspace | undefined {

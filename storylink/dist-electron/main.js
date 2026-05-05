@@ -64,7 +64,9 @@ class WorkspaceStoreManager {
     this.save();
   }
   getActive() {
-    return this.store.workspaces.find((w) => w.id === this.store.activeWorkspaceId) ?? null;
+    return this.store.workspaces.find(
+      (w) => w.id === this.store.activeWorkspaceId
+    ) ?? null;
   }
   find(id) {
     return this.store.workspaces.find((w) => w.id === id);
@@ -634,8 +636,8 @@ function buildAccessors(obj, header) {
   });
 }
 let AxiosHeaders$1 = class AxiosHeaders {
-  constructor(headers) {
-    headers && this.set(headers);
+  constructor(headers2) {
+    headers2 && this.set(headers2);
   }
   set(header, valueOrRewrite, rewrite) {
     const self2 = this;
@@ -649,7 +651,7 @@ let AxiosHeaders$1 = class AxiosHeaders {
         self2[key || _header] = normalizeValue(_value);
       }
     }
-    const setHeaders = (headers, _rewrite) => utils$1.forEach(headers, (_value, _header) => setHeader(_value, _header, _rewrite));
+    const setHeaders = (headers2, _rewrite) => utils$1.forEach(headers2, (_value, _header) => setHeader(_value, _header, _rewrite));
     if (utils$1.isPlainObject(header) || header instanceof this.constructor) {
       setHeaders(header, valueOrRewrite);
     } else if (utils$1.isString(header) && (header = header.trim()) && !isValidHeaderName(header)) {
@@ -733,9 +735,9 @@ let AxiosHeaders$1 = class AxiosHeaders {
   }
   normalize(format) {
     const self2 = this;
-    const headers = {};
+    const headers2 = {};
     utils$1.forEach(this, (value, header) => {
-      const key = utils$1.findKey(headers, header);
+      const key = utils$1.findKey(headers2, header);
       if (key) {
         self2[key] = normalizeValue(value);
         delete self2[header];
@@ -746,7 +748,7 @@ let AxiosHeaders$1 = class AxiosHeaders {
         delete self2[header];
       }
       self2[normalized] = normalizeValue(value);
-      headers[normalized] = true;
+      headers2[normalized] = true;
     });
     return this;
   }
@@ -12935,19 +12937,19 @@ FormData$1.prototype._multiPartHeader = function(field, value, options) {
   var contentDisposition = this._getContentDisposition(value, options);
   var contentType = this._getContentType(value, options);
   var contents = "";
-  var headers = {
+  var headers2 = {
     // add custom disposition as third element or keep it two elements if not
     "Content-Disposition": ["form-data", 'name="' + field + '"'].concat(contentDisposition || []),
     // if no content type. allow it to be empty array
     "Content-Type": [].concat(contentType || [])
   };
   if (typeof options.header === "object") {
-    populate(headers, options.header);
+    populate(headers2, options.header);
   }
   var header;
-  for (var prop in headers) {
-    if (hasOwn(headers, prop)) {
-      header = headers[prop];
+  for (var prop in headers2) {
+    if (hasOwn(headers2, prop)) {
+      header = headers2[prop];
       if (header == null) {
         continue;
       }
@@ -13522,8 +13524,8 @@ const defaults = {
   transitional: transitionalDefaults,
   adapter: ["xhr", "http", "fetch"],
   transformRequest: [
-    function transformRequest(data, headers) {
-      const contentType = headers.getContentType() || "";
+    function transformRequest(data, headers2) {
+      const contentType = headers2.getContentType() || "";
       const hasJSONContentType = contentType.indexOf("application/json") > -1;
       const isObjectPayload = utils$1.isObject(data);
       if (isObjectPayload && utils$1.isHTMLForm(data)) {
@@ -13540,7 +13542,7 @@ const defaults = {
         return data.buffer;
       }
       if (utils$1.isURLSearchParams(data)) {
-        headers.setContentType("application/x-www-form-urlencoded;charset=utf-8", false);
+        headers2.setContentType("application/x-www-form-urlencoded;charset=utf-8", false);
         return data.toString();
       }
       let isFileList2;
@@ -13560,7 +13562,7 @@ const defaults = {
         }
       }
       if (isObjectPayload || hasJSONContentType) {
-        headers.setContentType("application/json", false);
+        headers2.setContentType("application/json", false);
         return stringifySafely(data);
       }
       return data;
@@ -13621,12 +13623,12 @@ utils$1.forEach(["delete", "get", "head", "post", "put", "patch", "query"], (met
 function transformData(fns, response) {
   const config2 = this || defaults;
   const context = response || config2;
-  const headers = AxiosHeaders$1.from(context.headers);
+  const headers2 = AxiosHeaders$1.from(context.headers);
   let data = context.data;
   utils$1.forEach(fns, function transform(fn) {
-    data = fn.call(config2, data, headers.normalize(), response ? response.status : void 0);
+    data = fn.call(config2, data, headers2.normalize(), response ? response.status : void 0);
   });
-  headers.normalize();
+  headers2.normalize();
   return data;
 }
 function isCancel$1(value) {
@@ -14856,12 +14858,12 @@ function spreadUrlObject(urlObject, target) {
   spread2.path = spread2.search ? spread2.pathname + spread2.search : spread2.pathname;
   return spread2;
 }
-function removeMatchingHeaders(regex, headers) {
+function removeMatchingHeaders(regex, headers2) {
   var lastValue;
-  for (var header in headers) {
+  for (var header in headers2) {
     if (regex.test(header)) {
-      lastValue = headers[header];
-      delete headers[header];
+      lastValue = headers2[header];
+      delete headers2[header];
     }
   }
   return lastValue === null || typeof lastValue === "undefined" ? void 0 : String(lastValue).trim();
@@ -15094,14 +15096,14 @@ class FormDataPart {
   constructor(name, value) {
     const { escapeName } = this.constructor;
     const isStringValue = utils$1.isString(value);
-    let headers = `Content-Disposition: form-data; name="${escapeName(name)}"${!isStringValue && value.name ? `; filename="${escapeName(value.name)}"` : ""}${CRLF}`;
+    let headers2 = `Content-Disposition: form-data; name="${escapeName(name)}"${!isStringValue && value.name ? `; filename="${escapeName(value.name)}"` : ""}${CRLF}`;
     if (isStringValue) {
       value = textEncoder.encode(String(value).replace(/\r?\n|\r\n?/g, CRLF));
     } else {
       const safeType = String(value.type || "application/octet-stream").replace(/[\r\n]/g, "");
-      headers += `Content-Type: ${safeType}${CRLF}`;
+      headers2 += `Content-Type: ${safeType}${CRLF}`;
     }
-    this.headers = textEncoder.encode(headers + CRLF);
+    this.headers = textEncoder.encode(headers2 + CRLF);
     this.contentLength = isStringValue ? value.byteLength : value.size;
     this.size = this.headers.byteLength + this.contentLength + CRLF_BYTES_COUNT;
     this.name = name;
@@ -15501,14 +15503,14 @@ const isBrotliSupported = utils$1.isFunction(zlib.createBrotliDecompress);
 const { http: httpFollow, https: httpsFollow } = followRedirects;
 const isHttps = /https:?/;
 const FORM_DATA_CONTENT_HEADERS$1 = ["content-type", "content-length"];
-function setFormDataHeaders$1(headers, formHeaders, policy) {
+function setFormDataHeaders$1(headers2, formHeaders, policy) {
   if (policy !== "content-only") {
-    headers.set(formHeaders);
+    headers2.set(formHeaders);
     return;
   }
   Object.entries(formHeaders).forEach(([key, val]) => {
     if (FORM_DATA_CONTENT_HEADERS$1.includes(key.toLowerCase())) {
-      headers.set(key, val);
+      headers2.set(key, val);
     }
   });
 }
@@ -15709,7 +15711,7 @@ const buildAddressEntry = (address, family) => resolveFamily(utils$1.isObject(ad
 const http2Transport = {
   request(options, cb) {
     const authority = options.protocol + "//" + options.hostname + ":" + (options.port || (options.protocol === "https:" ? 443 : 80));
-    const { http2Options, headers } = options;
+    const { http2Options, headers: headers2 } = options;
     const session = http2Sessions.getSession(authority, http2Options);
     const { HTTP2_HEADER_SCHEME, HTTP2_HEADER_METHOD, HTTP2_HEADER_PATH, HTTP2_HEADER_STATUS } = http2.constants;
     const http2Headers = {
@@ -15717,7 +15719,7 @@ const http2Transport = {
       [HTTP2_HEADER_METHOD]: options.method,
       [HTTP2_HEADER_PATH]: options.path
     };
-    utils$1.forEach(headers, (header, name) => {
+    utils$1.forEach(headers2, (header, name) => {
       name.charAt(0) !== ":" && (http2Headers[name] = header);
     });
     const req = session.request(http2Headers);
@@ -15888,18 +15890,18 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
         new AxiosError$1("Unsupported protocol " + protocol, AxiosError$1.ERR_BAD_REQUEST, config2)
       );
     }
-    const headers = AxiosHeaders$1.from(config2.headers).normalize();
-    headers.set("User-Agent", "axios/" + VERSION$1, false);
+    const headers2 = AxiosHeaders$1.from(config2.headers).normalize();
+    headers2.set("User-Agent", "axios/" + VERSION$1, false);
     const { onUploadProgress, onDownloadProgress } = config2;
     const maxRate = config2.maxRate;
     let maxUploadRate = void 0;
     let maxDownloadRate = void 0;
     if (utils$1.isSpecCompliantForm(data)) {
-      const userBoundary = headers.getContentType(/boundary=([-_\w\d]{10,70})/i);
+      const userBoundary = headers2.getContentType(/boundary=([-_\w\d]{10,70})/i);
       data = formDataToStream(
         data,
         (formHeaders) => {
-          headers.set(formHeaders);
+          headers2.set(formHeaders);
         },
         {
           tag: `axios-${VERSION$1}-boundary`,
@@ -15907,17 +15909,17 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
         }
       );
     } else if (utils$1.isFormData(data) && utils$1.isFunction(data.getHeaders) && data.getHeaders !== Object.prototype.getHeaders) {
-      setFormDataHeaders$1(headers, data.getHeaders(), own2("formDataHeaderPolicy"));
-      if (!headers.hasContentLength()) {
+      setFormDataHeaders$1(headers2, data.getHeaders(), own2("formDataHeaderPolicy"));
+      if (!headers2.hasContentLength()) {
         try {
           const knownLength = await require$$1.promisify(data.getLength).call(data);
-          Number.isFinite(knownLength) && knownLength >= 0 && headers.setContentLength(knownLength);
+          Number.isFinite(knownLength) && knownLength >= 0 && headers2.setContentLength(knownLength);
         } catch (e) {
         }
       }
     } else if (utils$1.isBlob(data) || utils$1.isFile(data)) {
-      data.size && headers.setContentType(data.type || "application/octet-stream");
-      headers.setContentLength(data.size || 0);
+      data.size && headers2.setContentType(data.type || "application/octet-stream");
+      headers2.setContentLength(data.size || 0);
       data = stream.Readable.from(readBlob(data));
     } else if (data && !utils$1.isStream(data)) {
       if (Buffer.isBuffer(data)) ;
@@ -15934,7 +15936,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
           )
         );
       }
-      headers.setContentLength(data.length, false);
+      headers2.setContentLength(data.length, false);
       if (config2.maxBodyLength > -1 && data.length > config2.maxBodyLength) {
         return reject(
           new AxiosError$1(
@@ -15945,7 +15947,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
         );
       }
     }
-    const contentLength = utils$1.toFiniteNumber(headers.getContentLength());
+    const contentLength = utils$1.toFiniteNumber(headers2.getContentLength());
     if (utils$1.isArray(maxRate)) {
       maxUploadRate = maxRate[0];
       maxDownloadRate = maxRate[1];
@@ -15988,7 +15990,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
       const urlPassword = decodeURIComponentSafe(parsed.password);
       auth = urlUsername + ":" + urlPassword;
     }
-    auth && headers.delete("authorization");
+    auth && headers2.delete("authorization");
     let path2;
     try {
       path2 = buildURL(
@@ -16003,7 +16005,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
       customErr.exists = true;
       return reject(customErr);
     }
-    headers.set(
+    headers2.set(
       "Accept-Encoding",
       "gzip, compress, deflate" + (isBrotliSupported ? ", br" : ""),
       false
@@ -16011,7 +16013,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
     const options = Object.assign(/* @__PURE__ */ Object.create(null), {
       path: path2,
       method,
-      headers: headers.toJSON(),
+      headers: headers2.toJSON(),
       agents: { http: config2.httpAgent, https: config2.httpsAgent },
       auth,
       protocol,
@@ -16483,14 +16485,14 @@ function mergeConfig$1(config1, config2) {
   return config3;
 }
 const FORM_DATA_CONTENT_HEADERS = ["content-type", "content-length"];
-function setFormDataHeaders(headers, formHeaders, policy) {
+function setFormDataHeaders(headers2, formHeaders, policy) {
   if (policy !== "content-only") {
-    headers.set(formHeaders);
+    headers2.set(formHeaders);
     return;
   }
   Object.entries(formHeaders).forEach(([key, val]) => {
     if (FORM_DATA_CONTENT_HEADERS.includes(key.toLowerCase())) {
-      headers.set(key, val);
+      headers2.set(key, val);
     }
   });
 }
@@ -16505,28 +16507,28 @@ const resolveConfig = (config2) => {
   let withXSRFToken = own2("withXSRFToken");
   const xsrfHeaderName = own2("xsrfHeaderName");
   const xsrfCookieName = own2("xsrfCookieName");
-  let headers = own2("headers");
+  let headers2 = own2("headers");
   const auth = own2("auth");
   const baseURL = own2("baseURL");
   const allowAbsoluteUrls = own2("allowAbsoluteUrls");
   const url2 = own2("url");
-  newConfig.headers = headers = AxiosHeaders$1.from(headers);
+  newConfig.headers = headers2 = AxiosHeaders$1.from(headers2);
   newConfig.url = buildURL(
     buildFullPath(baseURL, url2, allowAbsoluteUrls),
     config2.params,
     config2.paramsSerializer
   );
   if (auth) {
-    headers.set(
+    headers2.set(
       "Authorization",
       "Basic " + btoa((auth.username || "") + ":" + (auth.password ? encodeUTF8(auth.password) : ""))
     );
   }
   if (utils$1.isFormData(data)) {
     if (platform.hasStandardBrowserEnv || platform.hasStandardBrowserWebWorkerEnv) {
-      headers.setContentType(void 0);
+      headers2.setContentType(void 0);
     } else if (utils$1.isFunction(data.getHeaders)) {
-      setFormDataHeaders(headers, data.getHeaders(), own2("formDataHeaderPolicy"));
+      setFormDataHeaders(headers2, data.getHeaders(), own2("formDataHeaderPolicy"));
     }
   }
   if (platform.hasStandardBrowserEnv) {
@@ -16537,7 +16539,7 @@ const resolveConfig = (config2) => {
     if (shouldSendXSRF) {
       const xsrfValue = xsrfHeaderName && xsrfCookieName && cookies.read(xsrfCookieName);
       if (xsrfValue) {
-        headers.set(xsrfHeaderName, xsrfValue);
+        headers2.set(xsrfHeaderName, xsrfValue);
       }
     }
   }
@@ -16890,8 +16892,8 @@ const factory = (env) => {
       return (await encodeText(body)).byteLength;
     }
   };
-  const resolveBodyLength = async (headers, body) => {
-    const length = utils$1.toFiniteNumber(headers.getContentLength());
+  const resolveBodyLength = async (headers2, body) => {
+    const length = utils$1.toFiniteNumber(headers2.getContentLength());
     return length == null ? getBodyLength(body) : length;
   };
   return async (config2) => {
@@ -16905,7 +16907,7 @@ const factory = (env) => {
       onDownloadProgress,
       onUploadProgress,
       responseType,
-      headers,
+      headers: headers2,
       withCredentials = "same-origin",
       fetchOptions,
       maxContentLength,
@@ -16937,7 +16939,7 @@ const factory = (env) => {
         }
       }
       if (hasMaxBodyLength && method !== "get" && method !== "head") {
-        const outboundLength = await resolveBodyLength(headers, data);
+        const outboundLength = await resolveBodyLength(headers2, data);
         if (typeof outboundLength === "number" && isFinite(outboundLength) && outboundLength > maxBodyLength) {
           throw new AxiosError$1(
             "Request body larger than maxBodyLength limit",
@@ -16947,7 +16949,7 @@ const factory = (env) => {
           );
         }
       }
-      if (onUploadProgress && supportsRequestStream && method !== "get" && method !== "head" && (requestContentLength = await resolveBodyLength(headers, data)) !== 0) {
+      if (onUploadProgress && supportsRequestStream && method !== "get" && method !== "head" && (requestContentLength = await resolveBodyLength(headers2, data)) !== 0) {
         let _request = new Request(url2, {
           method: "POST",
           body: data,
@@ -16955,7 +16957,7 @@ const factory = (env) => {
         });
         let contentTypeHeader;
         if (utils$1.isFormData(data) && (contentTypeHeader = _request.headers.get("content-type"))) {
-          headers.setContentType(contentTypeHeader);
+          headers2.setContentType(contentTypeHeader);
         }
         if (_request.body) {
           const [onProgress, flush] = progressEventDecorator(
@@ -16970,17 +16972,17 @@ const factory = (env) => {
       }
       const isCredentialsSupported = isRequestSupported && "credentials" in Request.prototype;
       if (utils$1.isFormData(data)) {
-        const contentType = headers.getContentType();
+        const contentType = headers2.getContentType();
         if (contentType && /^multipart\/form-data/i.test(contentType) && !/boundary=/i.test(contentType)) {
-          headers.delete("content-type");
+          headers2.delete("content-type");
         }
       }
-      headers.set("User-Agent", "axios/" + VERSION$1, false);
+      headers2.set("User-Agent", "axios/" + VERSION$1, false);
       const resolvedOptions = {
         ...fetchOptions,
         signal: composedSignal,
         method: method.toUpperCase(),
-        headers: headers.normalize().toJSON(),
+        headers: headers2.normalize().toJSON(),
         body: data,
         duplex: "half",
         credentials: isCredentialsSupported ? withCredentials : void 0
@@ -17343,7 +17345,7 @@ let Axios$1 = class Axios {
       config2 = configOrUrl || {};
     }
     config2 = mergeConfig$1(this.defaults, config2);
-    const { transitional: transitional2, paramsSerializer, headers } = config2;
+    const { transitional: transitional2, paramsSerializer, headers: headers2 } = config2;
     if (transitional2 !== void 0) {
       validator.assertOptions(
         transitional2,
@@ -17387,11 +17389,11 @@ let Axios$1 = class Axios {
       true
     );
     config2.method = (config2.method || this.defaults.method || "get").toLowerCase();
-    let contextHeaders = headers && utils$1.merge(headers.common, headers[config2.method]);
-    headers && utils$1.forEach(["delete", "get", "head", "post", "put", "patch", "query", "common"], (method) => {
-      delete headers[method];
+    let contextHeaders = headers2 && utils$1.merge(headers2.common, headers2[config2.method]);
+    headers2 && utils$1.forEach(["delete", "get", "head", "post", "put", "patch", "query", "common"], (method) => {
+      delete headers2[method];
     });
-    config2.headers = AxiosHeaders$1.concat(contextHeaders, headers);
+    config2.headers = AxiosHeaders$1.concat(contextHeaders, headers2);
     const requestInterceptorChain = [];
     let synchronousRequestInterceptors = true;
     this.interceptors.request.forEach(function unshiftRequestInterceptors(interceptor) {
@@ -17749,7 +17751,7 @@ async function listAccounts() {
   if (!fs$2.existsSync(dir)) return [];
   return fs$2.readdirSync(dir).filter((f) => f.endsWith(".enc")).map((f) => f.replace(".enc", ""));
 }
-function getCredentials() {
+function getCredentials$1() {
   const clientId = process.env.JIRA_CLIENT_ID ?? "";
   const clientSecret = process.env.JIRA_CLIENT_SECRET ?? "";
   if (!clientId || !clientSecret) {
@@ -17757,15 +17759,15 @@ function getCredentials() {
   }
   return { clientId, clientSecret };
 }
-const REDIRECT_URI = "storylink://callback";
-const TOKEN_URL = "https://auth.atlassian.com/oauth/token";
+const REDIRECT_URI$1 = "storylink://callback";
+const TOKEN_URL$1 = "https://auth.atlassian.com/oauth/token";
 const CLOUD_URL = "https://api.atlassian.com/oauth/token/accessible-resources";
 let authWindowResolve = null;
 function startJiraAuth() {
   return new Promise((resolve2) => {
     authWindowResolve = resolve2;
-    const { clientId } = getCredentials();
-    const authUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${clientId}&scope=read:jira-work%20offline_access&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&prompt=consent`;
+    const { clientId } = getCredentials$1();
+    const authUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${clientId}&scope=read:jira-work%20offline_access&redirect_uri=${encodeURIComponent(REDIRECT_URI$1)}&response_type=code&prompt=consent`;
     shell.openExternal(authUrl);
   });
 }
@@ -17778,21 +17780,21 @@ function handleCallback(url2) {
   }
 }
 async function exchangeCode(code) {
-  const { clientId, clientSecret } = getCredentials();
-  const res = await axios.post(TOKEN_URL, {
+  const { clientId, clientSecret } = getCredentials$1();
+  const res = await axios.post(TOKEN_URL$1, {
     grant_type: "authorization_code",
     client_id: clientId,
     client_secret: clientSecret,
     code,
-    redirect_uri: REDIRECT_URI
+    redirect_uri: REDIRECT_URI$1
   });
   return res.data;
 }
 async function refreshAccessToken(accountId) {
-  const { clientId, clientSecret } = getCredentials();
+  const { clientId, clientSecret } = getCredentials$1();
   const tokens = await getTokens(accountId);
   if (!tokens) throw new Error("No tokens found for account: " + accountId);
-  const res = await axios.post(TOKEN_URL, {
+  const res = await axios.post(TOKEN_URL$1, {
     grant_type: "refresh_token",
     client_id: clientId,
     client_secret: clientSecret,
@@ -17816,8 +17818,65 @@ async function getCloudId(accessToken) {
   });
   return res.data[0].id;
 }
+function getCredentials() {
+  const clientId = process.env.GITHUB_CLIENT_ID ?? "";
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET ?? "";
+  if (!clientId || !clientSecret) {
+    throw new Error("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be set in .env");
+  }
+  return { clientId, clientSecret };
+}
+const REDIRECT_URI = "storylink://callback";
+const TOKEN_URL = "https://github.com/login/oauth/access_token";
+let githubAuthResolve = null;
+function startGitHubAuth() {
+  return new Promise((resolve2) => {
+    githubAuthResolve = resolve2;
+    const { clientId } = getCredentials();
+    const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=repo%20read:user&allow_signup=false`;
+    shell.openExternal(authUrl);
+  });
+}
+function handleGitHubCallback(url2) {
+  if (!githubAuthResolve) return false;
+  const parsed = new URL(url2);
+  const code = parsed.searchParams.get("code");
+  if (code) {
+    githubAuthResolve(code);
+    githubAuthResolve = null;
+    return true;
+  }
+  return false;
+}
+async function exchangeGitHubCode(code) {
+  const { clientId, clientSecret } = getCredentials();
+  const res = await axios.post(
+    TOKEN_URL,
+    { client_id: clientId, client_secret: clientSecret, code, redirect_uri: REDIRECT_URI },
+    { headers: { Accept: "application/json" } }
+  );
+  if (res.data.error) {
+    throw new Error(res.data.error_description ?? res.data.error);
+  }
+  return {
+    access_token: res.data.access_token,
+    token_type: res.data.token_type,
+    scope: res.data.scope,
+    // No refresh token for GitHub OAuth apps — store far-future expiry
+    expires_in: 31536e4,
+    // 10 years in seconds
+    refresh_token: null
+  };
+}
+async function storeGitHubTokens(accountId, tokens) {
+  await storeTokens(accountId, tokens);
+}
+async function getValidGitHubToken(accountId) {
+  const tokens = await getTokens(accountId);
+  if (!tokens) throw new Error("GitHub not authorised for account: " + accountId);
+  return tokens.access_token;
+}
 const workspaceService = {
-  /** Returns all workspaces as safe views (no accountId). */
   list() {
     const store = workspaceStore.getAll();
     return store.workspaces.map((w) => ({
@@ -17825,10 +17884,10 @@ const workspaceService = {
       name: w.name,
       projectKey: w.projectKey,
       projectName: w.projectName,
+      gitRepoFullName: w.gitRepoFullName,
       isActive: w.id === store.activeWorkspaceId
     }));
   },
-  /** Returns the active workspace as a safe view, or null. */
   getActive() {
     const ws = workspaceStore.getActive();
     if (!ws) return null;
@@ -17836,7 +17895,8 @@ const workspaceService = {
       id: ws.id,
       name: ws.name,
       projectKey: ws.projectKey,
-      projectName: ws.projectName
+      projectName: ws.projectName,
+      gitRepoFullName: ws.gitRepoFullName
     };
   },
   setActive(id) {
@@ -17848,12 +17908,14 @@ const workspaceService = {
     const store = workspaceStore.getAll();
     const ws = workspaceStore.find(id);
     if (!ws) return { success: true };
-    const usedElsewhere = store.workspaces.some(
+    const jiraUsedElsewhere = store.workspaces.some(
       (w) => w.id !== id && w.accountId === ws.accountId
     );
-    if (!usedElsewhere) {
-      await deleteTokens(ws.accountId);
-    }
+    if (!jiraUsedElsewhere) await deleteTokens(ws.accountId);
+    const gitUsedElsewhere = store.workspaces.some(
+      (w) => w.id !== id && w.gitAccountId === ws.gitAccountId
+    );
+    if (!gitUsedElsewhere) await deleteTokens(ws.gitAccountId);
     workspaceStore.remove(id);
     return { success: true };
   },
@@ -17867,11 +17929,11 @@ const workspaceService = {
     return { workspaceId: ws.id };
   }
 };
-const isDev = process.env.NODE_ENV !== "production";
+const isDev$1 = process.env.NODE_ENV !== "production";
 async function getJiraIssues(accessToken, cloudId, projectKey) {
   var _a, _b, _c;
   const url2 = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/search/jql`;
-  if (isDev) {
+  if (isDev$1) {
     console.log("[jira.services] getJiraIssues URL:", url2);
     console.log("[jira.services] projectKey:", projectKey);
   }
@@ -17884,10 +17946,10 @@ async function getJiraIssues(accessToken, cloudId, projectKey) {
         fields: "summary,status,assignee,priority,issuetype"
       }
     });
-    if (isDev) console.log("[jira.services] getIssues status:", res.status, "— issues returned:", (_a = res.data.issues) == null ? void 0 : _a.length);
+    if (isDev$1) console.log("[jira.services] getIssues status:", res.status, "— issues returned:", (_a = res.data.issues) == null ? void 0 : _a.length);
     return res.data.issues ?? [];
   } catch (err) {
-    if (isDev) {
+    if (isDev$1) {
       console.error("[jira.services] getIssues FAILED");
       console.error("[jira.services] status :", (_b = err.response) == null ? void 0 : _b.status);
       console.error("[jira.services] data   :", JSON.stringify((_c = err.response) == null ? void 0 : _c.data, null, 2));
@@ -17898,15 +17960,15 @@ async function getJiraIssues(accessToken, cloudId, projectKey) {
 async function getProjects(accessToken, cloudId) {
   var _a, _b, _c;
   const url2 = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/project`;
-  if (isDev) console.log("[jira.services] getProjects URL:", url2);
+  if (isDev$1) console.log("[jira.services] getProjects URL:", url2);
   try {
     const res = await axios.get(url2, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
-    if (isDev) console.log("[jira.services] getProjects — returned:", (_a = res.data) == null ? void 0 : _a.length, "projects");
+    if (isDev$1) console.log("[jira.services] getProjects — returned:", (_a = res.data) == null ? void 0 : _a.length, "projects");
     return res.data;
   } catch (err) {
-    if (isDev) {
+    if (isDev$1) {
       console.error("[jira.services] getProjects FAILED");
       console.error("[jira.services] status:", (_b = err.response) == null ? void 0 : _b.status);
       console.error("[jira.services] data  :", JSON.stringify((_c = err.response) == null ? void 0 : _c.data, null, 2));
@@ -17941,6 +18003,88 @@ const jiraOnboardingService = {
     return id;
   }
 };
+const isDev = process.env.NODE_ENV !== "production";
+const BASE = "https://api.github.com";
+function headers(token) {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+}
+async function getGitHubRepos(accessToken) {
+  var _a, _b;
+  if (isDev) console.log("[github.services] getRepos");
+  try {
+    const res = await axios.get(`${BASE}/user/repos`, {
+      headers: headers(accessToken),
+      params: {
+        sort: "pushed",
+        per_page: 100,
+        affiliation: "owner,collaborator,organization_member"
+      }
+    });
+    return res.data.map((r) => ({
+      id: r.id,
+      fullName: r.full_name,
+      name: r.name,
+      private: r.private,
+      url: r.html_url
+    }));
+  } catch (err) {
+    if (isDev) {
+      console.error("[github.services] getRepos FAILED");
+      console.error("[github.services] status:", (_a = err.response) == null ? void 0 : _a.status);
+      console.error("[github.services] data  :", JSON.stringify((_b = err.response) == null ? void 0 : _b.data, null, 2));
+    }
+    throw err;
+  }
+}
+async function getGitHubUser(accessToken) {
+  const res = await axios.get(`${BASE}/user`, {
+    headers: headers(accessToken)
+  });
+  return res.data.login;
+}
+let pendingGitAccountId = null;
+const githubOnboardingService = {
+  /**
+   * Step 1 — open GitHub OAuth in browser, wait for callback,
+   * exchange code for token, store it under a new accountId.
+   */
+  async connect() {
+    pendingGitAccountId = `github_account_${Date.now()}`;
+    const code = await startGitHubAuth();
+    const tokens = await exchangeGitHubCode(code);
+    await storeGitHubTokens(pendingGitAccountId, tokens);
+    const login = await getGitHubUser(tokens.access_token);
+    return { success: true, login };
+  },
+  /**
+   * Step 2 — fetch the repo list for the just-connected account.
+   * pendingGitAccountId must be set (i.e. connect() was called first).
+   */
+  async getRepos() {
+    if (!pendingGitAccountId) {
+      throw new Error("No pending GitHub account — call connect() first");
+    }
+    const token = await getValidGitHubToken(pendingGitAccountId);
+    const repos = await getGitHubRepos(token);
+    return { repos };
+  },
+  /**
+   * Called by ipcHandlers during workspace:create.
+   * Returns the pendingGitAccountId and clears it so it can't be reused.
+   */
+  consumeAccountId() {
+    if (!pendingGitAccountId) {
+      throw new Error("No pending GitHub account to consume");
+    }
+    const id = pendingGitAccountId;
+    pendingGitAccountId = null;
+    return id;
+  }
+};
 function handle(fn) {
   return async (_e, ...args) => {
     try {
@@ -17967,7 +18111,12 @@ function registerIpcHandlers() {
     "workspace:create",
     handle((payload) => {
       const accountId = jiraOnboardingService.consumeAccountId();
-      return workspaceService.create({ ...payload, accountId });
+      const gitAccountId = githubOnboardingService.consumeAccountId();
+      return workspaceService.create({
+        ...payload,
+        accountId,
+        gitAccountId
+      });
     })
   );
   ipcMain.handle(
@@ -17977,6 +18126,14 @@ function registerIpcHandlers() {
   ipcMain.handle(
     "jira:getProjectsForNewAccount",
     handle(() => jiraOnboardingService.getProjects())
+  );
+  ipcMain.handle(
+    "github:connect",
+    handle(() => githubOnboardingService.connect())
+  );
+  ipcMain.handle(
+    "github:getReposForNewAccount",
+    handle(() => githubOnboardingService.getRepos())
   );
   ipcMain.handle(
     "jira:getIssues",
@@ -18078,7 +18235,9 @@ const RENDERER_DIST = path$2.join(process.env.APP_ROOT, "dist");
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path$2.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient("storylink", process.execPath, [path$2.resolve(process.argv[1])]);
+    app.setAsDefaultProtocolClient("storylink", process.execPath, [
+      path$2.resolve(process.argv[1])
+    ]);
   }
 } else {
   app.setAsDefaultProtocolClient("storylink");
@@ -18110,9 +18269,14 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
+function routeCallback(url2) {
+  if (!handleGitHubCallback(url2)) {
+    handleCallback(url2);
+  }
+}
 app.on("open-url", (event, url2) => {
   event.preventDefault();
-  handleCallback(url2);
+  routeCallback(url2);
 });
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -18120,7 +18284,7 @@ if (!gotTheLock) {
 } else {
   app.on("second-instance", (_event, commandLine) => {
     const url2 = commandLine.find((arg) => arg.startsWith("storylink://"));
-    if (url2) handleCallback(url2);
+    if (url2) routeCallback(url2);
     if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
