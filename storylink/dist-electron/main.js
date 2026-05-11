@@ -1,11 +1,8 @@
-var __defProp = Object.defineProperty;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 import { app, shell, safeStorage, ipcMain, BrowserWindow } from "electron";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import path$2 from "node:path";
-import fs$2 from "node:fs";
+import Database from "better-sqlite3";
 import require$$1 from "util";
 import stream, { Readable } from "stream";
 import require$$1$1, { resolve } from "path";
@@ -16,63 +13,109 @@ import require$$6 from "fs";
 import require$$8 from "crypto";
 import http2 from "http2";
 import require$$4$1 from "assert";
-import require$$0$1 from "tty";
+import require$$1$2 from "tty";
+import require$$0$1 from "os";
 import zlib from "zlib";
 import { EventEmitter } from "events";
-function getPath() {
-  return path$2.join(app.getPath("userData"), "workspaces.json");
-}
-function load() {
-  const file = getPath();
-  if (!fs$2.existsSync(file)) return { workspaces: [], activeWorkspaceId: null };
-  try {
-    return JSON.parse(fs$2.readFileSync(file, "utf-8"));
-  } catch {
-    return { workspaces: [], activeWorkspaceId: null };
-  }
-}
-function persist(store) {
-  fs$2.writeFileSync(getPath(), JSON.stringify(store, null, 2));
-}
-class WorkspaceStoreManager {
-  constructor() {
-    __publicField(this, "store", load());
-  }
-  getAll() {
-    return this.store;
-  }
-  save() {
-    persist(this.store);
-  }
-  setActive(id) {
-    this.store.activeWorkspaceId = id;
-    this.save();
-  }
-  add(workspace) {
-    this.store.workspaces.push(workspace);
-    if (!this.store.activeWorkspaceId) {
-      this.store.activeWorkspaceId = workspace.id;
+import fs$2 from "node:fs";
+const CREATE_WORKSPACES = `
+    CREATE TABLE IF NOT EXISTS workspaces (
+        id                  TEXT    PRIMARY KEY,
+        name                TEXT    NOT NULL,
+        account_id          TEXT    NOT NULL,
+        project_key         TEXT    NOT NULL,
+        project_name        TEXT    NOT NULL,
+        git_account_id      TEXT    NOT NULL,
+        git_repo_full_name  TEXT    NOT NULL,
+        git_repo_id         INTEGER NOT NULL,
+        is_active           INTEGER NOT NULL DEFAULT 0,
+        created_at          INTEGER NOT NULL
+    );
+`;
+const CREATE_PR_LINKS = `
+    CREATE TABLE IF NOT EXISTS pr_links (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        workspace_id    TEXT    NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        issue_key       TEXT    NOT NULL,
+        pr_number       INTEGER NOT NULL,
+        pr_title        TEXT    NOT NULL,
+        source          TEXT    NOT NULL CHECK(source IN ('auto','manual')),
+        added_at        INTEGER NOT NULL,
+        UNIQUE(workspace_id, issue_key, pr_number)
+    );
+`;
+const CREATE_CACHED_ISSUES = `
+    CREATE TABLE IF NOT EXISTS cached_issues (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        workspace_id    TEXT    NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        issue_key       TEXT    NOT NULL,
+        data            TEXT    NOT NULL,
+        fetched_at      INTEGER NOT NULL,
+        UNIQUE(workspace_id, issue_key)
+    );
+`;
+const CREATE_CACHED_PRS = `
+    CREATE TABLE IF NOT EXISTS cached_prs (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        workspace_id    TEXT    NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        pr_number       INTEGER NOT NULL,
+        data            TEXT    NOT NULL,
+        fetched_at      INTEGER NOT NULL,
+        UNIQUE(workspace_id, pr_number)
+    );
+`;
+const CREATE_INDEXES = `
+    CREATE INDEX IF NOT EXISTS idx_pr_links_workspace     ON pr_links(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_pr_links_issue_key     ON pr_links(workspace_id, issue_key);
+    CREATE INDEX IF NOT EXISTS idx_cached_issues_workspace ON cached_issues(workspace_id);
+    CREATE INDEX IF NOT EXISTS idx_cached_prs_workspace   ON cached_prs(workspace_id);
+`;
+const MIGRATIONS = [
+  // Version 1 — initial schema
+  [
+    CREATE_WORKSPACES,
+    CREATE_PR_LINKS,
+    CREATE_CACHED_ISSUES,
+    CREATE_CACHED_PRS,
+    CREATE_INDEXES
+  ].join("\n")
+  // Version 2 — example future migration (add a column):
+  // `ALTER TABLE workspaces ADD COLUMN display_color TEXT`,
+];
+function runMigrations(db2) {
+  const currentVersion = db2.prepare("PRAGMA user_version").get().user_version;
+  const pending = MIGRATIONS.slice(currentVersion);
+  if (pending.length === 0) return;
+  console.log(
+    `[db] Running ${pending.length} migration(s) (schema v${currentVersion} → v${MIGRATIONS.length})`
+  );
+  const runAll = db2.transaction(() => {
+    for (const sql of pending) {
+      db2.exec(sql);
     }
-    this.save();
-  }
-  remove(id) {
-    var _a;
-    this.store.workspaces = this.store.workspaces.filter((w) => w.id !== id);
-    if (this.store.activeWorkspaceId === id) {
-      this.store.activeWorkspaceId = ((_a = this.store.workspaces[0]) == null ? void 0 : _a.id) ?? null;
-    }
-    this.save();
-  }
-  getActive() {
-    return this.store.workspaces.find(
-      (w) => w.id === this.store.activeWorkspaceId
-    ) ?? null;
-  }
-  find(id) {
-    return this.store.workspaces.find((w) => w.id === id);
-  }
+    db2.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
+  });
+  runAll();
+  console.log(`[db] Migrations complete. Schema now at v${MIGRATIONS.length}`);
 }
-const workspaceStore = new WorkspaceStoreManager();
+let _db = null;
+function open() {
+  if (_db) return;
+  const dbPath = path$2.join(app.getPath("userData"), "storylink.db");
+  _db = new Database(dbPath);
+  _db.pragma("journal_mode = WAL");
+  _db.pragma("foreign_keys = ON");
+  runMigrations(_db);
+  console.log(`[db] Opened: ${dbPath}`);
+}
+function db() {
+  if (!_db) throw new Error("[db] Database is not open. Call open() first.");
+  return _db;
+}
+function close() {
+  _db == null ? void 0 : _db.close();
+  _db = null;
+}
 function bind$2(fn, thisArg) {
   return function wrap2() {
     return fn.apply(thisArg, arguments);
@@ -636,8 +679,8 @@ function buildAccessors(obj, header) {
   });
 }
 let AxiosHeaders$1 = class AxiosHeaders {
-  constructor(headers2) {
-    headers2 && this.set(headers2);
+  constructor(headers) {
+    headers && this.set(headers);
   }
   set(header, valueOrRewrite, rewrite) {
     const self2 = this;
@@ -651,7 +694,7 @@ let AxiosHeaders$1 = class AxiosHeaders {
         self2[key || _header] = normalizeValue(_value);
       }
     }
-    const setHeaders = (headers2, _rewrite) => utils$1.forEach(headers2, (_value, _header) => setHeader(_value, _header, _rewrite));
+    const setHeaders = (headers, _rewrite) => utils$1.forEach(headers, (_value, _header) => setHeader(_value, _header, _rewrite));
     if (utils$1.isPlainObject(header) || header instanceof this.constructor) {
       setHeaders(header, valueOrRewrite);
     } else if (utils$1.isString(header) && (header = header.trim()) && !isValidHeaderName(header)) {
@@ -735,9 +778,9 @@ let AxiosHeaders$1 = class AxiosHeaders {
   }
   normalize(format) {
     const self2 = this;
-    const headers2 = {};
+    const headers = {};
     utils$1.forEach(this, (value, header) => {
-      const key = utils$1.findKey(headers2, header);
+      const key = utils$1.findKey(headers, header);
       if (key) {
         self2[key] = normalizeValue(value);
         delete self2[header];
@@ -748,7 +791,7 @@ let AxiosHeaders$1 = class AxiosHeaders {
         delete self2[header];
       }
       self2[normalized] = normalizeValue(value);
-      headers2[normalized] = true;
+      headers[normalized] = true;
     });
     return this;
   }
@@ -11917,7 +11960,7 @@ var mimeDb = require$$0;
  * MIT Licensed
  */
 (function(exports$1) {
-  var db = mimeDb;
+  var db2 = mimeDb;
   var extname = require$$1$1.extname;
   var EXTRACT_TYPE_REGEXP = /^\s*([^;\s]*)(?:;|\s|$)/;
   var TEXT_TYPE_REGEXP = /^text\//i;
@@ -11934,7 +11977,7 @@ var mimeDb = require$$0;
       return false;
     }
     var match = EXTRACT_TYPE_REGEXP.exec(type2);
-    var mime2 = match && db[match[1].toLowerCase()];
+    var mime2 = match && db2[match[1].toLowerCase()];
     if (mime2 && mime2.charset) {
       return mime2.charset;
     }
@@ -11980,8 +12023,8 @@ var mimeDb = require$$0;
   }
   function populateMaps(extensions, types) {
     var preference = ["nginx", "apache", void 0, "iana"];
-    Object.keys(db).forEach(function forEachMimeType(type2) {
-      var mime2 = db[type2];
+    Object.keys(db2).forEach(function forEachMimeType(type2) {
+      var mime2 = db2[type2];
       var exts = mime2.extensions;
       if (!exts || !exts.length) {
         return;
@@ -11990,7 +12033,7 @@ var mimeDb = require$$0;
       for (var i = 0; i < exts.length; i++) {
         var extension2 = exts[i];
         if (types[extension2]) {
-          var from = preference.indexOf(db[types[extension2]].source);
+          var from = preference.indexOf(db2[types[extension2]].source);
           var to = preference.indexOf(mime2.source);
           if (types[extension2] !== "application/octet-stream" && (from > to || from === to && types[extension2].substr(0, 12) === "application/")) {
             continue;
@@ -12152,14 +12195,7 @@ var _eval = EvalError;
 var range = RangeError;
 var ref = ReferenceError;
 var syntax = SyntaxError;
-var type;
-var hasRequiredType;
-function requireType() {
-  if (hasRequiredType) return type;
-  hasRequiredType = 1;
-  type = TypeError;
-  return type;
-}
+var type = TypeError;
 var uri = URIError;
 var abs$1 = Math.abs;
 var floor$1 = Math.floor;
@@ -12405,7 +12441,7 @@ function requireCallBindApplyHelpers() {
   if (hasRequiredCallBindApplyHelpers) return callBindApplyHelpers;
   hasRequiredCallBindApplyHelpers = 1;
   var bind3 = functionBind;
-  var $TypeError2 = requireType();
+  var $TypeError2 = type;
   var $call2 = requireFunctionCall();
   var $actualApply = requireActualApply();
   callBindApplyHelpers = function callBindBasic(args) {
@@ -12478,7 +12514,7 @@ var $EvalError = _eval;
 var $RangeError = range;
 var $ReferenceError = ref;
 var $SyntaxError = syntax;
-var $TypeError$1 = requireType();
+var $TypeError$1 = type;
 var $URIError = uri;
 var abs = abs$1;
 var floor = floor$1;
@@ -12809,7 +12845,7 @@ var GetIntrinsic2 = getIntrinsic;
 var $defineProperty = GetIntrinsic2("%Object.defineProperty%", true);
 var hasToStringTag = requireShams()();
 var hasOwn$1 = hasown;
-var $TypeError = requireType();
+var $TypeError = type;
 var toStringTag = hasToStringTag ? Symbol.toStringTag : null;
 var esSetTostringtag = function setToStringTag(object, value) {
   var overrideIfSet = arguments.length > 2 && !!arguments[2] && arguments[2].force;
@@ -12850,9 +12886,9 @@ var asynckit = asynckit$1;
 var setToStringTag2 = esSetTostringtag;
 var hasOwn = hasown;
 var populate = populate$1;
-function FormData$1(options) {
-  if (!(this instanceof FormData$1)) {
-    return new FormData$1(options);
+function FormData$2(options) {
+  if (!(this instanceof FormData$2)) {
+    return new FormData$2(options);
   }
   this._overheadLength = 0;
   this._valueLength = 0;
@@ -12863,10 +12899,10 @@ function FormData$1(options) {
     this[option] = options[option];
   }
 }
-util.inherits(FormData$1, CombinedStream);
-FormData$1.LINE_BREAK = "\r\n";
-FormData$1.DEFAULT_CONTENT_TYPE = "application/octet-stream";
-FormData$1.prototype.append = function(field, value, options) {
+util.inherits(FormData$2, CombinedStream);
+FormData$2.LINE_BREAK = "\r\n";
+FormData$2.DEFAULT_CONTENT_TYPE = "application/octet-stream";
+FormData$2.prototype.append = function(field, value, options) {
   options = options || {};
   if (typeof options === "string") {
     options = { filename: options };
@@ -12886,7 +12922,7 @@ FormData$1.prototype.append = function(field, value, options) {
   append2(footer);
   this._trackLength(header, value, options);
 };
-FormData$1.prototype._trackLength = function(header, value, options) {
+FormData$2.prototype._trackLength = function(header, value, options) {
   var valueLength = 0;
   if (options.knownLength != null) {
     valueLength += Number(options.knownLength);
@@ -12896,7 +12932,7 @@ FormData$1.prototype._trackLength = function(header, value, options) {
     valueLength = Buffer.byteLength(value);
   }
   this._valueLength += valueLength;
-  this._overheadLength += Buffer.byteLength(header) + FormData$1.LINE_BREAK.length;
+  this._overheadLength += Buffer.byteLength(header) + FormData$2.LINE_BREAK.length;
   if (!value || !value.path && !(value.readable && hasOwn(value, "httpVersion")) && !(value instanceof Stream)) {
     return;
   }
@@ -12904,7 +12940,7 @@ FormData$1.prototype._trackLength = function(header, value, options) {
     this._valuesToMeasure.push(value);
   }
 };
-FormData$1.prototype._lengthRetriever = function(value, callback) {
+FormData$2.prototype._lengthRetriever = function(value, callback) {
   if (hasOwn(value, "fd")) {
     if (value.end != void 0 && value.end != Infinity && value.start != void 0) {
       callback(null, value.end + 1 - (value.start ? value.start : 0));
@@ -12930,26 +12966,26 @@ FormData$1.prototype._lengthRetriever = function(value, callback) {
     callback("Unknown stream");
   }
 };
-FormData$1.prototype._multiPartHeader = function(field, value, options) {
+FormData$2.prototype._multiPartHeader = function(field, value, options) {
   if (typeof options.header === "string") {
     return options.header;
   }
   var contentDisposition = this._getContentDisposition(value, options);
   var contentType = this._getContentType(value, options);
   var contents = "";
-  var headers2 = {
+  var headers = {
     // add custom disposition as third element or keep it two elements if not
     "Content-Disposition": ["form-data", 'name="' + field + '"'].concat(contentDisposition || []),
     // if no content type. allow it to be empty array
     "Content-Type": [].concat(contentType || [])
   };
   if (typeof options.header === "object") {
-    populate(headers2, options.header);
+    populate(headers, options.header);
   }
   var header;
-  for (var prop in headers2) {
-    if (hasOwn(headers2, prop)) {
-      header = headers2[prop];
+  for (var prop in headers) {
+    if (hasOwn(headers, prop)) {
+      header = headers[prop];
       if (header == null) {
         continue;
       }
@@ -12957,13 +12993,13 @@ FormData$1.prototype._multiPartHeader = function(field, value, options) {
         header = [header];
       }
       if (header.length) {
-        contents += prop + ": " + header.join("; ") + FormData$1.LINE_BREAK;
+        contents += prop + ": " + header.join("; ") + FormData$2.LINE_BREAK;
       }
     }
   }
-  return "--" + this.getBoundary() + FormData$1.LINE_BREAK + contents + FormData$1.LINE_BREAK;
+  return "--" + this.getBoundary() + FormData$2.LINE_BREAK + contents + FormData$2.LINE_BREAK;
 };
-FormData$1.prototype._getContentDisposition = function(value, options) {
+FormData$2.prototype._getContentDisposition = function(value, options) {
   var filename;
   if (typeof options.filepath === "string") {
     filename = path$1.normalize(options.filepath).replace(/\\/g, "/");
@@ -12976,7 +13012,7 @@ FormData$1.prototype._getContentDisposition = function(value, options) {
     return 'filename="' + filename + '"';
   }
 };
-FormData$1.prototype._getContentType = function(value, options) {
+FormData$2.prototype._getContentType = function(value, options) {
   var contentType = options.contentType;
   if (!contentType && value && value.name) {
     contentType = mime.lookup(value.name);
@@ -12991,13 +13027,13 @@ FormData$1.prototype._getContentType = function(value, options) {
     contentType = mime.lookup(options.filepath || options.filename);
   }
   if (!contentType && value && typeof value === "object") {
-    contentType = FormData$1.DEFAULT_CONTENT_TYPE;
+    contentType = FormData$2.DEFAULT_CONTENT_TYPE;
   }
   return contentType;
 };
-FormData$1.prototype._multiPartFooter = function() {
+FormData$2.prototype._multiPartFooter = function() {
   return (function(next) {
-    var footer = FormData$1.LINE_BREAK;
+    var footer = FormData$2.LINE_BREAK;
     var lastPart = this._streams.length === 0;
     if (lastPart) {
       footer += this._lastBoundary();
@@ -13005,10 +13041,10 @@ FormData$1.prototype._multiPartFooter = function() {
     next(footer);
   }).bind(this);
 };
-FormData$1.prototype._lastBoundary = function() {
-  return "--" + this.getBoundary() + "--" + FormData$1.LINE_BREAK;
+FormData$2.prototype._lastBoundary = function() {
+  return "--" + this.getBoundary() + "--" + FormData$2.LINE_BREAK;
 };
-FormData$1.prototype.getHeaders = function(userHeaders) {
+FormData$2.prototype.getHeaders = function(userHeaders) {
   var header;
   var formHeaders = {
     "content-type": "multipart/form-data; boundary=" + this.getBoundary()
@@ -13020,19 +13056,19 @@ FormData$1.prototype.getHeaders = function(userHeaders) {
   }
   return formHeaders;
 };
-FormData$1.prototype.setBoundary = function(boundary) {
+FormData$2.prototype.setBoundary = function(boundary) {
   if (typeof boundary !== "string") {
     throw new TypeError("FormData boundary must be a string");
   }
   this._boundary = boundary;
 };
-FormData$1.prototype.getBoundary = function() {
+FormData$2.prototype.getBoundary = function() {
   if (!this._boundary) {
     this._generateBoundary();
   }
   return this._boundary;
 };
-FormData$1.prototype.getBuffer = function() {
+FormData$2.prototype.getBuffer = function() {
   var dataBuffer = new Buffer.alloc(0);
   var boundary = this.getBoundary();
   for (var i = 0, len = this._streams.length; i < len; i++) {
@@ -13043,16 +13079,16 @@ FormData$1.prototype.getBuffer = function() {
         dataBuffer = Buffer.concat([dataBuffer, Buffer.from(this._streams[i])]);
       }
       if (typeof this._streams[i] !== "string" || this._streams[i].substring(2, boundary.length + 2) !== boundary) {
-        dataBuffer = Buffer.concat([dataBuffer, Buffer.from(FormData$1.LINE_BREAK)]);
+        dataBuffer = Buffer.concat([dataBuffer, Buffer.from(FormData$2.LINE_BREAK)]);
       }
     }
   }
   return Buffer.concat([dataBuffer, Buffer.from(this._lastBoundary())]);
 };
-FormData$1.prototype._generateBoundary = function() {
+FormData$2.prototype._generateBoundary = function() {
   this._boundary = "--------------------------" + crypto.randomBytes(12).toString("hex");
 };
-FormData$1.prototype.getLengthSync = function() {
+FormData$2.prototype.getLengthSync = function() {
   var knownLength = this._overheadLength + this._valueLength;
   if (this._streams.length) {
     knownLength += this._lastBoundary().length;
@@ -13062,14 +13098,14 @@ FormData$1.prototype.getLengthSync = function() {
   }
   return knownLength;
 };
-FormData$1.prototype.hasKnownLength = function() {
+FormData$2.prototype.hasKnownLength = function() {
   var hasKnownLength = true;
   if (this._valuesToMeasure.length) {
     hasKnownLength = false;
   }
   return hasKnownLength;
 };
-FormData$1.prototype.getLength = function(cb) {
+FormData$2.prototype.getLength = function(cb) {
   var knownLength = this._overheadLength + this._valueLength;
   if (this._streams.length) {
     knownLength += this._lastBoundary().length;
@@ -13089,7 +13125,7 @@ FormData$1.prototype.getLength = function(cb) {
     cb(null, knownLength);
   });
 };
-FormData$1.prototype.submit = function(params, cb) {
+FormData$2.prototype.submit = function(params, cb) {
   var request;
   var options;
   var defaults2 = { method: "post" };
@@ -13136,19 +13172,19 @@ FormData$1.prototype.submit = function(params, cb) {
   }).bind(this));
   return request;
 };
-FormData$1.prototype._error = function(err) {
+FormData$2.prototype._error = function(err) {
   if (!this.error) {
     this.error = err;
     this.pause();
     this.emit("error", err);
   }
 };
-FormData$1.prototype.toString = function() {
+FormData$2.prototype.toString = function() {
   return "[object FormData]";
 };
-setToStringTag2(FormData$1.prototype, "FormData");
-var form_data = FormData$1;
-const FormData$2 = /* @__PURE__ */ getDefaultExportFromCjs(form_data);
+setToStringTag2(FormData$2.prototype, "FormData");
+var form_data = FormData$2;
+const FormData$1 = /* @__PURE__ */ getDefaultExportFromCjs(form_data);
 function isVisitable(thing) {
   return utils$1.isPlainObject(thing) || utils$1.isArray(thing);
 }
@@ -13172,7 +13208,7 @@ function toFormData$1(obj, formData, options) {
   if (!utils$1.isObject(obj)) {
     throw new TypeError("target must be an object");
   }
-  formData = formData || new (FormData$2 || FormData)();
+  formData = formData || new (FormData$1 || FormData)();
   options = utils$1.toFlatObject(
     options,
     {
@@ -13417,7 +13453,7 @@ const platform$1 = {
   isNode: true,
   classes: {
     URLSearchParams,
-    FormData: FormData$2,
+    FormData: FormData$1,
     Blob: typeof Blob !== "undefined" && Blob || null
   },
   ALPHABET,
@@ -13524,8 +13560,8 @@ const defaults = {
   transitional: transitionalDefaults,
   adapter: ["xhr", "http", "fetch"],
   transformRequest: [
-    function transformRequest(data, headers2) {
-      const contentType = headers2.getContentType() || "";
+    function transformRequest(data, headers) {
+      const contentType = headers.getContentType() || "";
       const hasJSONContentType = contentType.indexOf("application/json") > -1;
       const isObjectPayload = utils$1.isObject(data);
       if (isObjectPayload && utils$1.isHTMLForm(data)) {
@@ -13542,7 +13578,7 @@ const defaults = {
         return data.buffer;
       }
       if (utils$1.isURLSearchParams(data)) {
-        headers2.setContentType("application/x-www-form-urlencoded;charset=utf-8", false);
+        headers.setContentType("application/x-www-form-urlencoded;charset=utf-8", false);
         return data.toString();
       }
       let isFileList2;
@@ -13562,7 +13598,7 @@ const defaults = {
         }
       }
       if (isObjectPayload || hasJSONContentType) {
-        headers2.setContentType("application/json", false);
+        headers.setContentType("application/json", false);
         return stringifySafely(data);
       }
       return data;
@@ -13623,12 +13659,12 @@ utils$1.forEach(["delete", "get", "head", "post", "put", "patch", "query"], (met
 function transformData(fns, response) {
   const config2 = this || defaults;
   const context = response || config2;
-  const headers2 = AxiosHeaders$1.from(context.headers);
+  const headers = AxiosHeaders$1.from(context.headers);
   let data = context.data;
   utils$1.forEach(fns, function transform(fn) {
-    data = fn.call(config2, data, headers2.normalize(), response ? response.status : void 0);
+    data = fn.call(config2, data, headers.normalize(), response ? response.status : void 0);
   });
-  headers2.normalize();
+  headers.normalize();
   return data;
 }
 function isCancel$1(value) {
@@ -14050,7 +14086,7 @@ function requireBrowser() {
   (function(module, exports$1) {
     exports$1.formatArgs = formatArgs;
     exports$1.save = save;
-    exports$1.load = load2;
+    exports$1.load = load;
     exports$1.useColors = useColors;
     exports$1.storage = localstorage();
     exports$1.destroy = /* @__PURE__ */ (() => {
@@ -14186,7 +14222,7 @@ function requireBrowser() {
       } catch (error) {
       }
     }
-    function load2() {
+    function load() {
       let r;
       try {
         r = exports$1.storage.getItem("debug") || exports$1.storage.getItem("DEBUG");
@@ -14216,18 +14252,133 @@ function requireBrowser() {
   return browser.exports;
 }
 var node = { exports: {} };
+var hasFlag;
+var hasRequiredHasFlag;
+function requireHasFlag() {
+  if (hasRequiredHasFlag) return hasFlag;
+  hasRequiredHasFlag = 1;
+  hasFlag = (flag, argv = process.argv) => {
+    const prefix = flag.startsWith("-") ? "" : flag.length === 1 ? "-" : "--";
+    const position = argv.indexOf(prefix + flag);
+    const terminatorPosition = argv.indexOf("--");
+    return position !== -1 && (terminatorPosition === -1 || position < terminatorPosition);
+  };
+  return hasFlag;
+}
+var supportsColor_1;
+var hasRequiredSupportsColor;
+function requireSupportsColor() {
+  if (hasRequiredSupportsColor) return supportsColor_1;
+  hasRequiredSupportsColor = 1;
+  const os = require$$0$1;
+  const tty = require$$1$2;
+  const hasFlag2 = requireHasFlag();
+  const { env } = process;
+  let forceColor;
+  if (hasFlag2("no-color") || hasFlag2("no-colors") || hasFlag2("color=false") || hasFlag2("color=never")) {
+    forceColor = 0;
+  } else if (hasFlag2("color") || hasFlag2("colors") || hasFlag2("color=true") || hasFlag2("color=always")) {
+    forceColor = 1;
+  }
+  if ("FORCE_COLOR" in env) {
+    if (env.FORCE_COLOR === "true") {
+      forceColor = 1;
+    } else if (env.FORCE_COLOR === "false") {
+      forceColor = 0;
+    } else {
+      forceColor = env.FORCE_COLOR.length === 0 ? 1 : Math.min(parseInt(env.FORCE_COLOR, 10), 3);
+    }
+  }
+  function translateLevel(level) {
+    if (level === 0) {
+      return false;
+    }
+    return {
+      level,
+      hasBasic: true,
+      has256: level >= 2,
+      has16m: level >= 3
+    };
+  }
+  function supportsColor(haveStream, streamIsTTY) {
+    if (forceColor === 0) {
+      return 0;
+    }
+    if (hasFlag2("color=16m") || hasFlag2("color=full") || hasFlag2("color=truecolor")) {
+      return 3;
+    }
+    if (hasFlag2("color=256")) {
+      return 2;
+    }
+    if (haveStream && !streamIsTTY && forceColor === void 0) {
+      return 0;
+    }
+    const min2 = forceColor || 0;
+    if (env.TERM === "dumb") {
+      return min2;
+    }
+    if (process.platform === "win32") {
+      const osRelease = os.release().split(".");
+      if (Number(osRelease[0]) >= 10 && Number(osRelease[2]) >= 10586) {
+        return Number(osRelease[2]) >= 14931 ? 3 : 2;
+      }
+      return 1;
+    }
+    if ("CI" in env) {
+      if (["TRAVIS", "CIRCLECI", "APPVEYOR", "GITLAB_CI", "GITHUB_ACTIONS", "BUILDKITE"].some((sign3) => sign3 in env) || env.CI_NAME === "codeship") {
+        return 1;
+      }
+      return min2;
+    }
+    if ("TEAMCITY_VERSION" in env) {
+      return /^(9\.(0*[1-9]\d*)\.|\d{2,}\.)/.test(env.TEAMCITY_VERSION) ? 1 : 0;
+    }
+    if (env.COLORTERM === "truecolor") {
+      return 3;
+    }
+    if ("TERM_PROGRAM" in env) {
+      const version = parseInt((env.TERM_PROGRAM_VERSION || "").split(".")[0], 10);
+      switch (env.TERM_PROGRAM) {
+        case "iTerm.app":
+          return version >= 3 ? 3 : 2;
+        case "Apple_Terminal":
+          return 2;
+      }
+    }
+    if (/-256(color)?$/i.test(env.TERM)) {
+      return 2;
+    }
+    if (/^screen|^xterm|^vt100|^vt220|^rxvt|color|ansi|cygwin|linux/i.test(env.TERM)) {
+      return 1;
+    }
+    if ("COLORTERM" in env) {
+      return 1;
+    }
+    return min2;
+  }
+  function getSupportLevel(stream2) {
+    const level = supportsColor(stream2, stream2 && stream2.isTTY);
+    return translateLevel(level);
+  }
+  supportsColor_1 = {
+    supportsColor: getSupportLevel,
+    stdout: translateLevel(supportsColor(true, tty.isatty(1))),
+    stderr: translateLevel(supportsColor(true, tty.isatty(2)))
+  };
+  return supportsColor_1;
+}
 var hasRequiredNode;
 function requireNode() {
   if (hasRequiredNode) return node.exports;
   hasRequiredNode = 1;
   (function(module, exports$1) {
-    const tty = require$$0$1;
+    const tty = require$$1$2;
     const util2 = require$$1;
     exports$1.init = init;
     exports$1.log = log2;
     exports$1.formatArgs = formatArgs;
     exports$1.save = save;
-    exports$1.load = load2;
+    exports$1.load = load;
     exports$1.useColors = useColors;
     exports$1.destroy = util2.deprecate(
       () => {
@@ -14236,7 +14387,7 @@ function requireNode() {
     );
     exports$1.colors = [6, 2, 3, 4, 5, 1];
     try {
-      const supportsColor = require("supports-color");
+      const supportsColor = requireSupportsColor();
       if (supportsColor && (supportsColor.stderr || supportsColor).level >= 2) {
         exports$1.colors = [
           20,
@@ -14369,7 +14520,7 @@ function requireNode() {
         delete process.env.DEBUG;
       }
     }
-    function load2() {
+    function load() {
       return process.env.DEBUG;
     }
     function init(debug2) {
@@ -14858,12 +15009,12 @@ function spreadUrlObject(urlObject, target) {
   spread2.path = spread2.search ? spread2.pathname + spread2.search : spread2.pathname;
   return spread2;
 }
-function removeMatchingHeaders(regex, headers2) {
+function removeMatchingHeaders(regex, headers) {
   var lastValue;
-  for (var header in headers2) {
+  for (var header in headers) {
     if (regex.test(header)) {
-      lastValue = headers2[header];
-      delete headers2[header];
+      lastValue = headers[header];
+      delete headers[header];
     }
   }
   return lastValue === null || typeof lastValue === "undefined" ? void 0 : String(lastValue).trim();
@@ -15096,14 +15247,14 @@ class FormDataPart {
   constructor(name, value) {
     const { escapeName } = this.constructor;
     const isStringValue = utils$1.isString(value);
-    let headers2 = `Content-Disposition: form-data; name="${escapeName(name)}"${!isStringValue && value.name ? `; filename="${escapeName(value.name)}"` : ""}${CRLF}`;
+    let headers = `Content-Disposition: form-data; name="${escapeName(name)}"${!isStringValue && value.name ? `; filename="${escapeName(value.name)}"` : ""}${CRLF}`;
     if (isStringValue) {
       value = textEncoder.encode(String(value).replace(/\r?\n|\r\n?/g, CRLF));
     } else {
       const safeType = String(value.type || "application/octet-stream").replace(/[\r\n]/g, "");
-      headers2 += `Content-Type: ${safeType}${CRLF}`;
+      headers += `Content-Type: ${safeType}${CRLF}`;
     }
-    this.headers = textEncoder.encode(headers2 + CRLF);
+    this.headers = textEncoder.encode(headers + CRLF);
     this.contentLength = isStringValue ? value.byteLength : value.size;
     this.size = this.headers.byteLength + this.contentLength + CRLF_BYTES_COUNT;
     this.name = name;
@@ -15503,14 +15654,14 @@ const isBrotliSupported = utils$1.isFunction(zlib.createBrotliDecompress);
 const { http: httpFollow, https: httpsFollow } = followRedirects;
 const isHttps = /https:?/;
 const FORM_DATA_CONTENT_HEADERS$1 = ["content-type", "content-length"];
-function setFormDataHeaders$1(headers2, formHeaders, policy) {
+function setFormDataHeaders$1(headers, formHeaders, policy) {
   if (policy !== "content-only") {
-    headers2.set(formHeaders);
+    headers.set(formHeaders);
     return;
   }
   Object.entries(formHeaders).forEach(([key, val]) => {
     if (FORM_DATA_CONTENT_HEADERS$1.includes(key.toLowerCase())) {
-      headers2.set(key, val);
+      headers.set(key, val);
     }
   });
 }
@@ -15711,7 +15862,7 @@ const buildAddressEntry = (address, family) => resolveFamily(utils$1.isObject(ad
 const http2Transport = {
   request(options, cb) {
     const authority = options.protocol + "//" + options.hostname + ":" + (options.port || (options.protocol === "https:" ? 443 : 80));
-    const { http2Options, headers: headers2 } = options;
+    const { http2Options, headers } = options;
     const session = http2Sessions.getSession(authority, http2Options);
     const { HTTP2_HEADER_SCHEME, HTTP2_HEADER_METHOD, HTTP2_HEADER_PATH, HTTP2_HEADER_STATUS } = http2.constants;
     const http2Headers = {
@@ -15719,7 +15870,7 @@ const http2Transport = {
       [HTTP2_HEADER_METHOD]: options.method,
       [HTTP2_HEADER_PATH]: options.path
     };
-    utils$1.forEach(headers2, (header, name) => {
+    utils$1.forEach(headers, (header, name) => {
       name.charAt(0) !== ":" && (http2Headers[name] = header);
     });
     const req = session.request(http2Headers);
@@ -15890,18 +16041,18 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
         new AxiosError$1("Unsupported protocol " + protocol, AxiosError$1.ERR_BAD_REQUEST, config2)
       );
     }
-    const headers2 = AxiosHeaders$1.from(config2.headers).normalize();
-    headers2.set("User-Agent", "axios/" + VERSION$1, false);
+    const headers = AxiosHeaders$1.from(config2.headers).normalize();
+    headers.set("User-Agent", "axios/" + VERSION$1, false);
     const { onUploadProgress, onDownloadProgress } = config2;
     const maxRate = config2.maxRate;
     let maxUploadRate = void 0;
     let maxDownloadRate = void 0;
     if (utils$1.isSpecCompliantForm(data)) {
-      const userBoundary = headers2.getContentType(/boundary=([-_\w\d]{10,70})/i);
+      const userBoundary = headers.getContentType(/boundary=([-_\w\d]{10,70})/i);
       data = formDataToStream(
         data,
         (formHeaders) => {
-          headers2.set(formHeaders);
+          headers.set(formHeaders);
         },
         {
           tag: `axios-${VERSION$1}-boundary`,
@@ -15909,17 +16060,17 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
         }
       );
     } else if (utils$1.isFormData(data) && utils$1.isFunction(data.getHeaders) && data.getHeaders !== Object.prototype.getHeaders) {
-      setFormDataHeaders$1(headers2, data.getHeaders(), own2("formDataHeaderPolicy"));
-      if (!headers2.hasContentLength()) {
+      setFormDataHeaders$1(headers, data.getHeaders(), own2("formDataHeaderPolicy"));
+      if (!headers.hasContentLength()) {
         try {
           const knownLength = await require$$1.promisify(data.getLength).call(data);
-          Number.isFinite(knownLength) && knownLength >= 0 && headers2.setContentLength(knownLength);
+          Number.isFinite(knownLength) && knownLength >= 0 && headers.setContentLength(knownLength);
         } catch (e) {
         }
       }
     } else if (utils$1.isBlob(data) || utils$1.isFile(data)) {
-      data.size && headers2.setContentType(data.type || "application/octet-stream");
-      headers2.setContentLength(data.size || 0);
+      data.size && headers.setContentType(data.type || "application/octet-stream");
+      headers.setContentLength(data.size || 0);
       data = stream.Readable.from(readBlob(data));
     } else if (data && !utils$1.isStream(data)) {
       if (Buffer.isBuffer(data)) ;
@@ -15936,7 +16087,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
           )
         );
       }
-      headers2.setContentLength(data.length, false);
+      headers.setContentLength(data.length, false);
       if (config2.maxBodyLength > -1 && data.length > config2.maxBodyLength) {
         return reject(
           new AxiosError$1(
@@ -15947,7 +16098,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
         );
       }
     }
-    const contentLength = utils$1.toFiniteNumber(headers2.getContentLength());
+    const contentLength = utils$1.toFiniteNumber(headers.getContentLength());
     if (utils$1.isArray(maxRate)) {
       maxUploadRate = maxRate[0];
       maxDownloadRate = maxRate[1];
@@ -15990,7 +16141,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
       const urlPassword = decodeURIComponentSafe(parsed.password);
       auth = urlUsername + ":" + urlPassword;
     }
-    auth && headers2.delete("authorization");
+    auth && headers.delete("authorization");
     let path2;
     try {
       path2 = buildURL(
@@ -16005,7 +16156,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
       customErr.exists = true;
       return reject(customErr);
     }
-    headers2.set(
+    headers.set(
       "Accept-Encoding",
       "gzip, compress, deflate" + (isBrotliSupported ? ", br" : ""),
       false
@@ -16013,7 +16164,7 @@ const httpAdapter = isHttpAdapterSupported && function httpAdapter2(config2) {
     const options = Object.assign(/* @__PURE__ */ Object.create(null), {
       path: path2,
       method,
-      headers: headers2.toJSON(),
+      headers: headers.toJSON(),
       agents: { http: config2.httpAgent, https: config2.httpsAgent },
       auth,
       protocol,
@@ -16485,14 +16636,14 @@ function mergeConfig$1(config1, config2) {
   return config3;
 }
 const FORM_DATA_CONTENT_HEADERS = ["content-type", "content-length"];
-function setFormDataHeaders(headers2, formHeaders, policy) {
+function setFormDataHeaders(headers, formHeaders, policy) {
   if (policy !== "content-only") {
-    headers2.set(formHeaders);
+    headers.set(formHeaders);
     return;
   }
   Object.entries(formHeaders).forEach(([key, val]) => {
     if (FORM_DATA_CONTENT_HEADERS.includes(key.toLowerCase())) {
-      headers2.set(key, val);
+      headers.set(key, val);
     }
   });
 }
@@ -16507,28 +16658,28 @@ const resolveConfig = (config2) => {
   let withXSRFToken = own2("withXSRFToken");
   const xsrfHeaderName = own2("xsrfHeaderName");
   const xsrfCookieName = own2("xsrfCookieName");
-  let headers2 = own2("headers");
+  let headers = own2("headers");
   const auth = own2("auth");
   const baseURL = own2("baseURL");
   const allowAbsoluteUrls = own2("allowAbsoluteUrls");
   const url2 = own2("url");
-  newConfig.headers = headers2 = AxiosHeaders$1.from(headers2);
+  newConfig.headers = headers = AxiosHeaders$1.from(headers);
   newConfig.url = buildURL(
     buildFullPath(baseURL, url2, allowAbsoluteUrls),
     config2.params,
     config2.paramsSerializer
   );
   if (auth) {
-    headers2.set(
+    headers.set(
       "Authorization",
       "Basic " + btoa((auth.username || "") + ":" + (auth.password ? encodeUTF8(auth.password) : ""))
     );
   }
   if (utils$1.isFormData(data)) {
     if (platform.hasStandardBrowserEnv || platform.hasStandardBrowserWebWorkerEnv) {
-      headers2.setContentType(void 0);
+      headers.setContentType(void 0);
     } else if (utils$1.isFunction(data.getHeaders)) {
-      setFormDataHeaders(headers2, data.getHeaders(), own2("formDataHeaderPolicy"));
+      setFormDataHeaders(headers, data.getHeaders(), own2("formDataHeaderPolicy"));
     }
   }
   if (platform.hasStandardBrowserEnv) {
@@ -16539,7 +16690,7 @@ const resolveConfig = (config2) => {
     if (shouldSendXSRF) {
       const xsrfValue = xsrfHeaderName && xsrfCookieName && cookies.read(xsrfCookieName);
       if (xsrfValue) {
-        headers2.set(xsrfHeaderName, xsrfValue);
+        headers.set(xsrfHeaderName, xsrfValue);
       }
     }
   }
@@ -16892,8 +17043,8 @@ const factory = (env) => {
       return (await encodeText(body)).byteLength;
     }
   };
-  const resolveBodyLength = async (headers2, body) => {
-    const length = utils$1.toFiniteNumber(headers2.getContentLength());
+  const resolveBodyLength = async (headers, body) => {
+    const length = utils$1.toFiniteNumber(headers.getContentLength());
     return length == null ? getBodyLength(body) : length;
   };
   return async (config2) => {
@@ -16907,7 +17058,7 @@ const factory = (env) => {
       onDownloadProgress,
       onUploadProgress,
       responseType,
-      headers: headers2,
+      headers,
       withCredentials = "same-origin",
       fetchOptions,
       maxContentLength,
@@ -16939,7 +17090,7 @@ const factory = (env) => {
         }
       }
       if (hasMaxBodyLength && method !== "get" && method !== "head") {
-        const outboundLength = await resolveBodyLength(headers2, data);
+        const outboundLength = await resolveBodyLength(headers, data);
         if (typeof outboundLength === "number" && isFinite(outboundLength) && outboundLength > maxBodyLength) {
           throw new AxiosError$1(
             "Request body larger than maxBodyLength limit",
@@ -16949,7 +17100,7 @@ const factory = (env) => {
           );
         }
       }
-      if (onUploadProgress && supportsRequestStream && method !== "get" && method !== "head" && (requestContentLength = await resolveBodyLength(headers2, data)) !== 0) {
+      if (onUploadProgress && supportsRequestStream && method !== "get" && method !== "head" && (requestContentLength = await resolveBodyLength(headers, data)) !== 0) {
         let _request = new Request(url2, {
           method: "POST",
           body: data,
@@ -16957,7 +17108,7 @@ const factory = (env) => {
         });
         let contentTypeHeader;
         if (utils$1.isFormData(data) && (contentTypeHeader = _request.headers.get("content-type"))) {
-          headers2.setContentType(contentTypeHeader);
+          headers.setContentType(contentTypeHeader);
         }
         if (_request.body) {
           const [onProgress, flush] = progressEventDecorator(
@@ -16972,17 +17123,17 @@ const factory = (env) => {
       }
       const isCredentialsSupported = isRequestSupported && "credentials" in Request.prototype;
       if (utils$1.isFormData(data)) {
-        const contentType = headers2.getContentType();
+        const contentType = headers.getContentType();
         if (contentType && /^multipart\/form-data/i.test(contentType) && !/boundary=/i.test(contentType)) {
-          headers2.delete("content-type");
+          headers.delete("content-type");
         }
       }
-      headers2.set("User-Agent", "axios/" + VERSION$1, false);
+      headers.set("User-Agent", "axios/" + VERSION$1, false);
       const resolvedOptions = {
         ...fetchOptions,
         signal: composedSignal,
         method: method.toUpperCase(),
-        headers: headers2.normalize().toJSON(),
+        headers: headers.normalize().toJSON(),
         body: data,
         duplex: "half",
         credentials: isCredentialsSupported ? withCredentials : void 0
@@ -17345,7 +17496,7 @@ let Axios$1 = class Axios {
       config2 = configOrUrl || {};
     }
     config2 = mergeConfig$1(this.defaults, config2);
-    const { transitional: transitional2, paramsSerializer, headers: headers2 } = config2;
+    const { transitional: transitional2, paramsSerializer, headers } = config2;
     if (transitional2 !== void 0) {
       validator.assertOptions(
         transitional2,
@@ -17389,11 +17540,11 @@ let Axios$1 = class Axios {
       true
     );
     config2.method = (config2.method || this.defaults.method || "get").toLowerCase();
-    let contextHeaders = headers2 && utils$1.merge(headers2.common, headers2[config2.method]);
-    headers2 && utils$1.forEach(["delete", "get", "head", "post", "put", "patch", "query", "common"], (method) => {
-      delete headers2[method];
+    let contextHeaders = headers && utils$1.merge(headers.common, headers[config2.method]);
+    headers && utils$1.forEach(["delete", "get", "head", "post", "put", "patch", "query", "common"], (method) => {
+      delete headers[method];
     });
-    config2.headers = AxiosHeaders$1.concat(contextHeaders, headers2);
+    config2.headers = AxiosHeaders$1.concat(contextHeaders, headers);
     const requestInterceptorChain = [];
     let synchronousRequestInterceptors = true;
     this.interceptors.request.forEach(function unshiftRequestInterceptors(interceptor) {
@@ -17714,42 +17865,45 @@ const {
   mergeConfig,
   create
 } = axios;
-function getStorePath() {
-  const dir = path$2.join(app.getPath("userData"), "tokens");
-  if (!fs$2.existsSync(dir)) fs$2.mkdirSync(dir, { recursive: true });
-  return dir;
+function tokenDir() {
+  return path$2.join(app.getPath("userData"), "tokens");
 }
-function tokenFilePath(accountId) {
-  const safe = accountId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return path$2.join(getStorePath(), `${safe}.enc`);
+function tokenPath(accountId) {
+  return path$2.join(tokenDir(), `${accountId}.enc`);
 }
 async function storeTokens(accountId, tokens) {
-  const payload = JSON.stringify({
-    ...tokens,
-    expires_at: Date.now() + tokens.expires_in * 1e3
-  });
-  const encrypted = safeStorage.encryptString(payload);
-  fs$2.writeFileSync(tokenFilePath(accountId), encrypted);
+  fs$2.mkdirSync(tokenDir(), { recursive: true });
+  const json = JSON.stringify(tokens);
+  if (safeStorage.isEncryptionAvailable()) {
+    const encrypted = safeStorage.encryptString(json);
+    fs$2.writeFileSync(tokenPath(accountId), encrypted);
+  } else {
+    fs$2.writeFileSync(tokenPath(accountId) + ".plain", json, "utf-8");
+  }
 }
 async function getTokens(accountId) {
-  const filePath = tokenFilePath(accountId);
-  if (!fs$2.existsSync(filePath)) return null;
-  try {
-    const encrypted = fs$2.readFileSync(filePath);
-    const decrypted = safeStorage.decryptString(encrypted);
-    return JSON.parse(decrypted);
-  } catch {
-    return null;
+  if (safeStorage.isEncryptionAvailable()) {
+    const file = tokenPath(accountId);
+    if (!fs$2.existsSync(file)) return null;
+    const encrypted = fs$2.readFileSync(file);
+    const json = safeStorage.decryptString(encrypted);
+    return JSON.parse(json);
+  } else {
+    const file = tokenPath(accountId) + ".plain";
+    if (!fs$2.existsSync(file)) return null;
+    return JSON.parse(fs$2.readFileSync(file, "utf-8"));
   }
 }
 async function deleteTokens(accountId) {
-  const filePath = tokenFilePath(accountId);
-  if (fs$2.existsSync(filePath)) fs$2.unlinkSync(filePath);
+  const enc = tokenPath(accountId);
+  const plain = enc + ".plain";
+  if (fs$2.existsSync(enc)) fs$2.unlinkSync(enc);
+  if (fs$2.existsSync(plain)) fs$2.unlinkSync(plain);
 }
 async function listAccounts() {
-  const dir = getStorePath();
+  const dir = tokenDir();
   if (!fs$2.existsSync(dir)) return [];
-  return fs$2.readdirSync(dir).filter((f) => f.endsWith(".enc")).map((f) => f.replace(".enc", ""));
+  return fs$2.readdirSync(dir).filter((f) => f.endsWith(".enc") || f.endsWith(".enc.plain")).map((f) => f.replace(/\.enc(\.plain)?$/, ""));
 }
 function getCredentials$1() {
   const clientId = process.env.JIRA_CLIENT_ID ?? "";
@@ -17760,63 +17914,91 @@ function getCredentials$1() {
   return { clientId, clientSecret };
 }
 const REDIRECT_URI$1 = "storylink://callback";
-const TOKEN_URL$1 = "https://auth.atlassian.com/oauth/token";
-const CLOUD_URL = "https://api.atlassian.com/oauth/token/accessible-resources";
-let authWindowResolve = null;
+const JIRA_AUTH_URL = "https://auth.atlassian.com/authorize";
+const JIRA_TOKEN_URL = "https://auth.atlassian.com/oauth/token";
+const JIRA_CLOUD_URL = "https://api.atlassian.com/oauth/token/accessible-resources";
+let jiraAuthResolve = null;
 function startJiraAuth() {
   return new Promise((resolve2) => {
-    authWindowResolve = resolve2;
+    jiraAuthResolve = resolve2;
     const { clientId } = getCredentials$1();
-    const authUrl = `https://auth.atlassian.com/authorize?audience=api.atlassian.com&client_id=${clientId}&scope=read:jira-work%20offline_access&redirect_uri=${encodeURIComponent(REDIRECT_URI$1)}&response_type=code&prompt=consent`;
+    const authUrl = `${JIRA_AUTH_URL}?audience=api.atlassian.com&client_id=${clientId}&scope=${encodeURIComponent("read:jira-work read:jira-user offline_access")}&redirect_uri=${encodeURIComponent(REDIRECT_URI$1)}&response_type=code&prompt=consent`;
     shell.openExternal(authUrl);
   });
 }
 function handleCallback(url2) {
+  if (!jiraAuthResolve) return;
   const parsed = new URL(url2);
   const code = parsed.searchParams.get("code");
-  if (code && authWindowResolve) {
-    authWindowResolve(code);
-    authWindowResolve = null;
+  if (code) {
+    jiraAuthResolve(code);
+    jiraAuthResolve = null;
   }
 }
 async function exchangeCode(code) {
   const { clientId, clientSecret } = getCredentials$1();
-  const res = await axios.post(TOKEN_URL$1, {
-    grant_type: "authorization_code",
-    client_id: clientId,
-    client_secret: clientSecret,
-    code,
-    redirect_uri: REDIRECT_URI$1
-  });
-  return res.data;
+  const res = await axios.post(
+    JIRA_TOKEN_URL,
+    {
+      grant_type: "authorization_code",
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: REDIRECT_URI$1
+    },
+    { headers: { "Content-Type": "application/json" } }
+  );
+  return {
+    access_token: res.data.access_token,
+    refresh_token: res.data.refresh_token,
+    expires_in: res.data.expires_in,
+    token_type: res.data.token_type,
+    issued_at: Date.now()
+  };
 }
-async function refreshAccessToken(accountId) {
+async function refreshAccessToken(accountId, tokens) {
   const { clientId, clientSecret } = getCredentials$1();
-  const tokens = await getTokens(accountId);
-  if (!tokens) throw new Error("No tokens found for account: " + accountId);
-  const res = await axios.post(TOKEN_URL$1, {
-    grant_type: "refresh_token",
-    client_id: clientId,
-    client_secret: clientSecret,
-    refresh_token: tokens.refresh_token
-  });
-  await storeTokens(accountId, res.data);
-  return res.data;
+  const res = await axios.post(
+    JIRA_TOKEN_URL,
+    {
+      grant_type: "refresh_token",
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: tokens.refresh_token
+    },
+    { headers: { "Content-Type": "application/json" } }
+  );
+  const refreshed = {
+    ...tokens,
+    access_token: res.data.access_token,
+    refresh_token: res.data.refresh_token ?? tokens.refresh_token,
+    expires_in: res.data.expires_in,
+    issued_at: Date.now()
+  };
+  await storeTokens(accountId, refreshed);
+  return refreshed;
 }
 async function getValidAccessToken(accountId) {
   const tokens = await getTokens(accountId);
   if (!tokens) throw new Error("Jira not authorised for account: " + accountId);
-  if (Date.now() > tokens.expires_at) {
-    const refreshed = await refreshAccessToken(accountId);
+  const expiresAt = (tokens.issued_at ?? 0) + (tokens.expires_in ?? 0) * 1e3;
+  const isExpired = Date.now() > expiresAt - 6e4;
+  if (isExpired && tokens.refresh_token) {
+    const refreshed = await refreshAccessToken(accountId, tokens);
     return refreshed.access_token;
   }
   return tokens.access_token;
 }
 async function getCloudId(accessToken) {
-  const res = await axios.get(CLOUD_URL, {
+  const res = await axios.get(JIRA_CLOUD_URL, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
-  return res.data[0].id;
+  const sites = res.data;
+  if (!sites.length) throw new Error("No accessible Jira sites found for this account.");
+  return sites[0].id;
+}
+function getApiBase(host) {
+  return host === "github.com" ? "https://api.github.com" : `https://${host}/api/v3`;
 }
 function getCredentials() {
   const clientId = process.env.GITHUB_CLIENT_ID ?? "";
@@ -17827,13 +18009,12 @@ function getCredentials() {
   return { clientId, clientSecret };
 }
 const REDIRECT_URI = "storylink://callback";
-const TOKEN_URL = "https://github.com/login/oauth/access_token";
 let githubAuthResolve = null;
 function startGitHubAuth() {
   return new Promise((resolve2) => {
     githubAuthResolve = resolve2;
     const { clientId } = getCredentials();
-    const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=repo%20read:user&allow_signup=false`;
+    const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=repo%20read:org%20read:user&allow_signup=false`;
     shell.openExternal(authUrl);
   });
 }
@@ -17851,130 +18032,187 @@ function handleGitHubCallback(url2) {
 async function exchangeGitHubCode(code) {
   const { clientId, clientSecret } = getCredentials();
   const res = await axios.post(
-    TOKEN_URL,
+    "https://github.com/login/oauth/access_token",
     { client_id: clientId, client_secret: clientSecret, code, redirect_uri: REDIRECT_URI },
     { headers: { Accept: "application/json" } }
   );
-  if (res.data.error) {
-    throw new Error(res.data.error_description ?? res.data.error);
-  }
+  if (res.data.error) throw new Error(res.data.error_description ?? res.data.error);
   return {
     access_token: res.data.access_token,
     token_type: res.data.token_type,
     scope: res.data.scope,
-    // No refresh token for GitHub OAuth apps — store far-future expiry
     expires_in: 31536e4,
-    // 10 years in seconds
     refresh_token: null
   };
 }
-async function storeGitHubTokens(accountId, tokens) {
-  await storeTokens(accountId, tokens);
+async function storeGitHubTokens(accountId, tokens, host = "github.com") {
+  await storeTokens(accountId, { ...tokens, host });
+}
+async function getGitHubHost(accountId) {
+  const tokens = await getTokens(accountId);
+  if (!tokens) throw new Error("GitHub not authorised for account: " + accountId);
+  return tokens.host ?? "github.com";
 }
 async function getValidGitHubToken(accountId) {
   const tokens = await getTokens(accountId);
   if (!tokens) throw new Error("GitHub not authorised for account: " + accountId);
   return tokens.access_token;
 }
+function rowToWorkspace(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    accountId: row.account_id,
+    projectKey: row.project_key,
+    projectName: row.project_name,
+    gitAccountId: row.git_account_id,
+    gitRepoFullName: row.git_repo_full_name,
+    gitRepoId: row.git_repo_id,
+    isActive: row.is_active === 1,
+    createdAt: row.created_at
+  };
+}
+function rowToView(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    projectKey: row.project_key,
+    projectName: row.project_name,
+    gitRepoFullName: row.git_repo_full_name,
+    isActive: row.is_active === 1
+  };
+}
 const workspaceService = {
   list() {
-    const store = workspaceStore.getAll();
-    return store.workspaces.map((w) => ({
-      id: w.id,
-      name: w.name,
-      projectKey: w.projectKey,
-      projectName: w.projectName,
-      gitRepoFullName: w.gitRepoFullName,
-      isActive: w.id === store.activeWorkspaceId
-    }));
+    const rows = db().prepare("SELECT * FROM workspaces ORDER BY created_at ASC").all();
+    return rows.map(rowToView);
   },
   getActive() {
-    const ws = workspaceStore.getActive();
-    if (!ws) return null;
+    const row = db().prepare("SELECT * FROM workspaces WHERE is_active = 1 LIMIT 1").get();
+    if (!row) return null;
     return {
-      id: ws.id,
-      name: ws.name,
-      projectKey: ws.projectKey,
-      projectName: ws.projectName,
-      gitRepoFullName: ws.gitRepoFullName
+      id: row.id,
+      name: row.name,
+      projectKey: row.project_key,
+      projectName: row.project_name,
+      gitRepoFullName: row.git_repo_full_name
     };
   },
+  getActiveInternal() {
+    const row = db().prepare("SELECT * FROM workspaces WHERE is_active = 1 LIMIT 1").get();
+    return row ? rowToWorkspace(row) : null;
+  },
+  findInternal(id) {
+    const row = db().prepare("SELECT * FROM workspaces WHERE id = ? LIMIT 1").get(id);
+    return row ? rowToWorkspace(row) : null;
+  },
   setActive(id) {
-    const ws = workspaceStore.find(id);
-    if (!ws) throw new Error(`Workspace not found: ${id}`);
-    workspaceStore.setActive(id);
+    const exists = db().prepare("SELECT id FROM workspaces WHERE id = ?").get(id);
+    if (!exists) throw new Error(`Workspace not found: ${id}`);
+    const clearAll = db().prepare("UPDATE workspaces SET is_active = 0");
+    const setOne = db().prepare("UPDATE workspaces SET is_active = 1 WHERE id = ?");
+    db().transaction(() => {
+      clearAll.run();
+      setOne.run(id);
+    })();
   },
   async remove(id) {
-    const store = workspaceStore.getAll();
-    const ws = workspaceStore.find(id);
+    const ws = workspaceService.findInternal(id);
     if (!ws) return { success: true };
-    const jiraUsedElsewhere = store.workspaces.some(
-      (w) => w.id !== id && w.accountId === ws.accountId
-    );
-    if (!jiraUsedElsewhere) await deleteTokens(ws.accountId);
-    const gitUsedElsewhere = store.workspaces.some(
-      (w) => w.id !== id && w.gitAccountId === ws.gitAccountId
-    );
-    if (!gitUsedElsewhere) await deleteTokens(ws.gitAccountId);
-    workspaceStore.remove(id);
+    const jiraShared = db().prepare("SELECT COUNT(*) as c FROM workspaces WHERE account_id = ? AND id != ?").get(ws.accountId, id);
+    if (jiraShared.c === 0) await deleteTokens(ws.accountId);
+    const gitShared = db().prepare("SELECT COUNT(*) as c FROM workspaces WHERE git_account_id = ? AND id != ?").get(ws.gitAccountId, id);
+    if (gitShared.c === 0) await deleteTokens(ws.gitAccountId);
+    db().prepare("DELETE FROM workspaces WHERE id = ?").run(id);
+    const next = db().prepare("SELECT id FROM workspaces ORDER BY created_at ASC LIMIT 1").get();
+    if (next) {
+      db().prepare("UPDATE workspaces SET is_active = 1 WHERE id = ?").run(next.id);
+    }
     return { success: true };
   },
   create(data) {
-    const ws = {
-      id: `ws_${Date.now()}`,
-      ...data,
-      createdAt: Date.now()
-    };
-    workspaceStore.add(ws);
-    return { workspaceId: ws.id };
+    const id = `ws_${Date.now()}`;
+    const now = Date.now();
+    const count = db().prepare("SELECT COUNT(*) as c FROM workspaces").get().c;
+    db().prepare(`
+            INSERT INTO workspaces
+                (id, name, account_id, project_key, project_name,
+                 git_account_id, git_repo_full_name, git_repo_id, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+      id,
+      data.name,
+      data.accountId,
+      data.projectKey,
+      data.projectName,
+      data.gitAccountId,
+      data.gitRepoFullName,
+      data.gitRepoId,
+      count === 0 ? 1 : 0,
+      now
+    );
+    return { workspaceId: id };
   }
 };
 const isDev$1 = process.env.NODE_ENV !== "production";
-async function getJiraIssues(accessToken, cloudId, projectKey) {
-  var _a, _b, _c;
-  const url2 = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/search/jql`;
-  if (isDev$1) {
-    console.log("[jira.services] getJiraIssues URL:", url2);
-    console.log("[jira.services] projectKey:", projectKey);
-  }
-  try {
-    const res = await axios.get(url2, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      params: {
-        jql: `project = ${projectKey} ORDER BY created DESC`,
-        maxResults: 50,
-        fields: "summary,status,assignee,priority,issuetype"
-      }
-    });
-    if (isDev$1) console.log("[jira.services] getIssues status:", res.status, "— issues returned:", (_a = res.data.issues) == null ? void 0 : _a.length);
-    return res.data.issues ?? [];
-  } catch (err) {
-    if (isDev$1) {
-      console.error("[jira.services] getIssues FAILED");
-      console.error("[jira.services] status :", (_b = err.response) == null ? void 0 : _b.status);
-      console.error("[jira.services] data   :", JSON.stringify((_c = err.response) == null ? void 0 : _c.data, null, 2));
-    }
-    throw err;
-  }
+function jiraBase(cloudId) {
+  return `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3`;
+}
+function authHeaders$1(token) {
+  return { Authorization: `Bearer ${token}` };
 }
 async function getProjects(accessToken, cloudId) {
-  var _a, _b, _c;
-  const url2 = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/project`;
-  if (isDev$1) console.log("[jira.services] getProjects URL:", url2);
-  try {
-    const res = await axios.get(url2, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    if (isDev$1) console.log("[jira.services] getProjects — returned:", (_a = res.data) == null ? void 0 : _a.length, "projects");
-    return res.data;
-  } catch (err) {
-    if (isDev$1) {
-      console.error("[jira.services] getProjects FAILED");
-      console.error("[jira.services] status:", (_b = err.response) == null ? void 0 : _b.status);
-      console.error("[jira.services] data  :", JSON.stringify((_c = err.response) == null ? void 0 : _c.data, null, 2));
+  if (isDev$1) console.log("[jira.services] getProjects cloudId:", cloudId);
+  const res = await axios.get(`${jiraBase(cloudId)}/project/search`, {
+    headers: authHeaders$1(accessToken),
+    params: { maxResults: 100, orderBy: "name" }
+  });
+  return (res.data.values ?? []).map((p) => ({
+    id: p.id,
+    key: p.key,
+    name: p.name,
+    projectTypeKey: p.projectTypeKey,
+    avatarUrls: p.avatarUrls ?? {}
+  }));
+}
+async function getJiraIssues(accessToken, cloudId, projectKey) {
+  if (isDev$1) console.log("[jira.services] getJiraIssues project:", projectKey);
+  const allIssues = [];
+  const pageSize = 100;
+  let nextPageToken = void 0;
+  while (true) {
+    const body = {
+      jql: `project = "${projectKey}" ORDER BY updated DESC`,
+      maxResults: pageSize,
+      fields: [
+        "summary",
+        "status",
+        "priority",
+        "issuetype",
+        "parent",
+        "subtasks"
+      ]
+    };
+    if (nextPageToken) {
+      body.nextPageToken = nextPageToken;
     }
-    throw err;
+    const res = await axios.post(
+      `${jiraBase(cloudId)}/search/jql`,
+      body,
+      {
+        headers: {
+          ...authHeaders$1(accessToken),
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    const issues = res.data.issues ?? [];
+    allIssues.push(...issues);
+    nextPageToken = res.data.nextPageToken;
+    if (!nextPageToken || issues.length < pageSize) break;
   }
+  if (isDev$1) console.log("[jira.services] fetched", allIssues.length, "issues");
+  return allIssues;
 }
 let pendingAccountId = null;
 const jiraOnboardingService = {
@@ -18004,101 +18242,507 @@ const jiraOnboardingService = {
   }
 };
 const isDev = process.env.NODE_ENV !== "production";
-const BASE = "https://api.github.com";
-function headers(token) {
+function authHeaders(token) {
   return {
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28"
   };
 }
-async function getGitHubRepos(accessToken) {
-  var _a, _b;
-  if (isDev) console.log("[github.services] getRepos");
+async function ghGet(token, host, path2, params) {
+  const url2 = `${getApiBase(host)}${path2}`;
+  const config2 = { headers: authHeaders(token), params };
+  const res = await axios.get(url2, config2);
+  return res.data;
+}
+function mapRepo(r) {
+  return { id: r.id, fullName: r.full_name, name: r.name, private: r.private, url: r.html_url };
+}
+function mapPR(r) {
+  var _a;
+  return {
+    number: r.number,
+    title: r.title,
+    state: r.state,
+    merged: !!r.merged_at,
+    draft: r.draft ?? false,
+    branch: ((_a = r.head) == null ? void 0 : _a.ref) ?? "",
+    url: r.html_url
+  };
+}
+function parseRepoUrl(input) {
+  const raw = input.trim().replace(/\/$/, "");
+  const ssh = raw.match(/^git@([^:]+):([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (ssh) return { host: ssh[1], ownerRepo: ssh[2] };
   try {
-    const res = await axios.get(`${BASE}/user/repos`, {
-      headers: headers(accessToken),
-      params: {
-        sort: "pushed",
-        per_page: 100,
-        affiliation: "owner,collaborator,organization_member"
-      }
-    });
-    return res.data.map((r) => ({
-      id: r.id,
-      fullName: r.full_name,
-      name: r.name,
-      private: r.private,
-      url: r.html_url
-    }));
-  } catch (err) {
-    if (isDev) {
-      console.error("[github.services] getRepos FAILED");
-      console.error("[github.services] status:", (_a = err.response) == null ? void 0 : _a.status);
-      console.error("[github.services] data  :", JSON.stringify((_b = err.response) == null ? void 0 : _b.data, null, 2));
+    const u = new URL(raw.endsWith(".git") ? raw.slice(0, -4) : raw);
+    const parts = u.pathname.replace(/^\//, "").split("/");
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+      return { host: u.hostname, ownerRepo: `${parts[0]}/${parts[1]}` };
     }
+  } catch {
+  }
+  const short = raw.match(/^([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)$/);
+  if (short) return { host: "github.com", ownerRepo: short[1] };
+  throw new Error(
+    `Could not parse GitHub repo URL: "${raw}". Expected: https://github.com/owner/repo, git@github.com:owner/repo.git, or owner/repo`
+  );
+}
+async function getAllRepos(accessToken, host) {
+  if (isDev) console.log("[github.services] getAllRepos host:", host);
+  const seen = /* @__PURE__ */ new Set();
+  const repos = [];
+  function addRepo(raw) {
+    if (seen.has(raw.id)) return;
+    seen.add(raw.id);
+    repos.push(mapRepo(raw));
+  }
+  async function fetchAllUserRepos() {
+    let page = 1;
+    while (true) {
+      const data = await ghGet(accessToken, host, "/user/repos", {
+        visibility: "all",
+        per_page: 100,
+        page
+      }).catch((err) => {
+        var _a;
+        if (isDev) console.error("[github.services] /user/repos failed:", (_a = err.response) == null ? void 0 : _a.status);
+        return [];
+      });
+      data.forEach(addRepo);
+      if (data.length < 100) break;
+      page++;
+    }
+  }
+  async function fetchCollaboratorRepos() {
+    let page = 1;
+    while (true) {
+      const data = await ghGet(accessToken, host, "/user/repos", {
+        affiliation: "collaborator",
+        per_page: 100,
+        page
+      }).catch((err) => {
+        var _a;
+        if (isDev) console.error("[github.services] /user/repos (collaborator) failed:", (_a = err.response) == null ? void 0 : _a.status);
+        return [];
+      });
+      data.forEach(addRepo);
+      if (data.length < 100) break;
+      page++;
+    }
+  }
+  async function fetchAllOrgRepos() {
+    const orgs = await ghGet(accessToken, host, "/user/orgs", { per_page: 100 }).catch((err) => {
+      var _a;
+      if (isDev) console.error("[github.services] /user/orgs failed:", (_a = err.response) == null ? void 0 : _a.status);
+      return [];
+    });
+    console.log("Org", orgs);
+    if (isDev) console.log("[github.services] orgs found:", orgs.length);
+    await Promise.allSettled(
+      orgs.map(
+        (org) => ghGet(accessToken, host, `/orgs/${org.login}/repos`, {
+          type: "all",
+          per_page: 100
+        }).then((data) => data.forEach(addRepo)).catch((err) => {
+          var _a;
+          if (isDev) console.warn(`[github.services] /orgs/${org.login}/repos failed:`, (_a = err.response) == null ? void 0 : _a.status);
+        })
+      )
+    );
+  }
+  await Promise.all([fetchAllUserRepos(), fetchCollaboratorRepos(), fetchAllOrgRepos()]);
+  if (isDev) console.log("[github.services] total unique repos:", repos.length);
+  repos.sort((a, b) => a.fullName.localeCompare(b.fullName));
+  return repos;
+}
+async function getGitHubPRs(accessToken, repoFullName, host = "github.com") {
+  if (isDev) console.log("[github.services] getPRs:", repoFullName, "host:", host);
+  const data = await ghGet(accessToken, host, `/repos/${repoFullName}/pulls`, {
+    state: "all",
+    per_page: 100,
+    sort: "updated",
+    direction: "desc"
+  });
+  return data.map(mapPR);
+}
+async function getPRByUrl(accessToken, url2, expectedRepoFullName, host = "github.com") {
+  const match = url2.match(/github[^/]*\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+  if (!match) throw new Error("Invalid GitHub PR URL");
+  const [, repoFullName, numberStr] = match;
+  if (repoFullName.toLowerCase() !== expectedRepoFullName.toLowerCase()) {
+    throw new Error(`PR belongs to ${repoFullName}, not the linked repo ${expectedRepoFullName}`);
+  }
+  const data = await ghGet(accessToken, host, `/repos/${repoFullName}/pulls/${numberStr}`);
+  return mapPR(data);
+}
+async function getGitHubUser(accessToken, host = "github.com") {
+  const data = await ghGet(accessToken, host, "/user");
+  return data.login;
+}
+async function getRepoByUrl(accessToken, url2) {
+  var _a;
+  const { host, ownerRepo } = parseRepoUrl(url2);
+  console.log("Owner Repo ", ownerRepo);
+  if (isDev) console.log("[github.services] getRepoByUrl host:", host, "repo:", ownerRepo);
+  try {
+    const data = await ghGet(accessToken, host, `/repos/${ownerRepo}`);
+    return { ...mapRepo(data), host };
+  } catch (err) {
+    console.log("Get Repo by URL ", err);
+    const status = (_a = err.response) == null ? void 0 : _a.status;
+    if (status === 404) throw new Error(`Repository "${ownerRepo}" not found on ${host}.`);
+    if (status === 401 || status === 403) throw new Error(`Access denied to "${ownerRepo}" on ${host}.`);
     throw err;
   }
 }
-async function getGitHubUser(accessToken) {
-  const res = await axios.get(`${BASE}/user`, {
-    headers: headers(accessToken)
-  });
-  return res.data.login;
-}
 let pendingGitAccountId = null;
 const githubOnboardingService = {
-  /**
-   * Step 1 — open GitHub OAuth in browser, wait for callback,
-   * exchange code for token, store it under a new accountId.
-   */
-  async connect() {
+  async connect(hostname) {
+    const host = ((hostname == null ? void 0 : hostname.trim()) || "github.com").toLowerCase();
     pendingGitAccountId = `github_account_${Date.now()}`;
     const code = await startGitHubAuth();
     const tokens = await exchangeGitHubCode(code);
-    await storeGitHubTokens(pendingGitAccountId, tokens);
-    const login = await getGitHubUser(tokens.access_token);
-    return { success: true, login };
+    await storeGitHubTokens(pendingGitAccountId, tokens, host);
+    const login = await getGitHubUser(tokens.access_token, host);
+    return { success: true, login, host };
   },
-  /**
-   * Step 2 — fetch the repo list for the just-connected account.
-   * pendingGitAccountId must be set (i.e. connect() was called first).
-   */
   async getRepos() {
-    if (!pendingGitAccountId) {
-      throw new Error("No pending GitHub account — call connect() first");
-    }
+    if (!pendingGitAccountId) throw new Error("No pending GitHub account — call connect() first");
     const token = await getValidGitHubToken(pendingGitAccountId);
-    const repos = await getGitHubRepos(token);
-    return { repos };
+    const host = await getGitHubHost(pendingGitAccountId);
+    const login = await getGitHubUser(token, host);
+    const all3 = await getAllRepos(token, host);
+    const mine = all3.filter((r) => r.fullName.startsWith(`${login}/`));
+    const orgs = all3.filter((r) => !r.fullName.startsWith(`${login}/`));
+    return { repos: all3, mine, orgs, login, host };
   },
-  /**
-   * Called by ipcHandlers during workspace:create.
-   * Returns the pendingGitAccountId and clears it so it can't be reused.
-   */
+  // Returns accountId WITHOUT clearing it — used by github:getRepoByUrl
+  // so the user can validate a repo URL before committing to workspace:create.
+  peekAccountId() {
+    if (!pendingGitAccountId) throw new Error("No pending GitHub account");
+    return pendingGitAccountId;
+  },
+  // Returns accountId AND clears it — called once during workspace:create.
   consumeAccountId() {
-    if (!pendingGitAccountId) {
-      throw new Error("No pending GitHub account to consume");
-    }
+    if (!pendingGitAccountId) throw new Error("No pending GitHub account to consume");
     const id = pendingGitAccountId;
     pendingGitAccountId = null;
     return id;
+  }
+};
+const CACHE_TTL_MS = 5 * 60 * 1e3;
+function mapJiraIssue(raw, cloudId) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+  const key = raw.key;
+  return {
+    id: raw.id,
+    key,
+    summary: ((_a = raw.fields) == null ? void 0 : _a.summary) ?? "(no summary)",
+    status: ((_c = (_b = raw.fields) == null ? void 0 : _b.status) == null ? void 0 : _c.name) ?? "Unknown",
+    priority: ((_e = (_d = raw.fields) == null ? void 0 : _d.priority) == null ? void 0 : _e.name) ?? "Unknown",
+    type: ((_g = (_f = raw.fields) == null ? void 0 : _f.issuetype) == null ? void 0 : _g.name) ?? "Unknown",
+    parentKey: (_i = (_h = raw.fields) == null ? void 0 : _h.parent) == null ? void 0 : _i.key,
+    epicLabel: void 0,
+    subtaskKeys: (((_j = raw.fields) == null ? void 0 : _j.subtasks) ?? []).map((s) => s.key),
+    jiraUrl: `https://api.atlassian.com/ex/jira/${cloudId}/browse/${key}`
+  };
+}
+const ISSUE_KEY_REGEX = /\b([A-Z]+-\d+)\b/gi;
+function extractKeys(text) {
+  const matches = [...text.matchAll(ISSUE_KEY_REGEX)];
+  return [...new Set(matches.map((m) => m[1].toUpperCase()))];
+}
+function buildAutoLinks(prs, knownKeys) {
+  const links = /* @__PURE__ */ new Map();
+  for (const pr of prs) {
+    const candidates = [
+      ...extractKeys(pr.title),
+      ...extractKeys(pr.branch)
+    ];
+    for (const key of candidates) {
+      if (!knownKeys.has(key)) continue;
+      if (!links.has(key)) links.set(key, []);
+      links.get(key).push(pr.number);
+    }
+  }
+  return links;
+}
+function prStatefromRaw(pr) {
+  if (pr.merged) return "merged";
+  if (pr.state === "closed") return "closed";
+  return "open";
+}
+function assembleLinkedIssues(issues, prs, workspaceId) {
+  const prMap = new Map(prs.map((p) => [p.number, p]));
+  const issueMap = new Map(issues.map((i) => [i.key, i]));
+  for (const issue of issues) {
+    if (issue.type === "Story" && issue.parentKey) {
+      const parent = issueMap.get(issue.parentKey);
+      if ((parent == null ? void 0 : parent.type) === "Epic") {
+        issue.epicLabel = parent.summary;
+      }
+    }
+  }
+  const manualRows = db().prepare(`
+            SELECT issue_key, pr_number, pr_title, source
+            FROM pr_links
+            WHERE workspace_id = ?
+        `).all(workspaceId);
+  const manualLinks = /* @__PURE__ */ new Map();
+  for (const row of manualRows) {
+    if (!manualLinks.has(row.issue_key)) manualLinks.set(row.issue_key, /* @__PURE__ */ new Set());
+    manualLinks.get(row.issue_key).add(row.pr_number);
+  }
+  const knownKeys = new Set(issues.map((i) => i.key));
+  const autoLinks = buildAutoLinks(prs, knownKeys);
+  function getLinkedPRs(issueKey) {
+    const result = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const prNum of autoLinks.get(issueKey) ?? []) {
+      const pr = prMap.get(prNum);
+      if (!pr) continue;
+      seen.add(prNum);
+      result.push({
+        prNumber: pr.number,
+        prTitle: pr.title,
+        state: prStatefromRaw(pr),
+        draft: pr.draft,
+        url: pr.url,
+        source: "auto"
+      });
+    }
+    for (const prNum of manualLinks.get(issueKey) ?? []) {
+      const pr = prMap.get(prNum);
+      if (!pr) continue;
+      if (seen.has(prNum)) {
+        const existing = result.find((r) => r.prNumber === prNum);
+        if (existing) existing.source = "manual";
+        continue;
+      }
+      seen.add(prNum);
+      result.push({
+        prNumber: pr.number,
+        prTitle: pr.title,
+        state: prStatefromRaw(pr),
+        draft: pr.draft,
+        url: pr.url,
+        source: "manual"
+      });
+    }
+    return result;
+  }
+  function toLinkedIssue(issue) {
+    const children = issues.filter((i) => i.parentKey === issue.key && i.type !== "Epic").map(toLinkedIssue);
+    return {
+      ...issue,
+      linkedPRs: getLinkedPRs(issue.key),
+      children
+    };
+  }
+  return issues.map(toLinkedIssue);
+}
+const STATUS_ORDER = ["To Do", "In Progress", "In Review", "Done"];
+function groupByStatus(stories) {
+  const map = /* @__PURE__ */ new Map();
+  for (const story of stories) {
+    const s = story.status;
+    if (!map.has(s)) map.set(s, []);
+    map.get(s).push(story);
+  }
+  return [...map.entries()].sort(([a], [b]) => {
+    const ai = STATUS_ORDER.indexOf(a);
+    const bi = STATUS_ORDER.indexOf(b);
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  }).map(([status, stories2]) => ({ status, stories: stories2 }));
+}
+function isCacheStale(fetchedAt) {
+  return Date.now() - fetchedAt > CACHE_TTL_MS;
+}
+function getCachedIssues(workspaceId) {
+  const rows = db().prepare("SELECT data, fetched_at FROM cached_issues WHERE workspace_id = ?").all(workspaceId);
+  if (rows.length === 0) return null;
+  if (rows.some((r) => isCacheStale(r.fetched_at))) return null;
+  return rows.map((r) => JSON.parse(r.data));
+}
+function setCachedIssues(workspaceId, issues) {
+  const upsert = db().prepare(`
+        INSERT INTO cached_issues (workspace_id, issue_key, data, fetched_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(workspace_id, issue_key) DO UPDATE SET
+            data       = excluded.data,
+            fetched_at = excluded.fetched_at
+    `);
+  const now = Date.now();
+  db().transaction(() => {
+    for (const issue of issues) {
+      upsert.run(workspaceId, issue.key, JSON.stringify(issue), now);
+    }
+  })();
+}
+function getCachedPRs(workspaceId) {
+  const rows = db().prepare("SELECT data, fetched_at FROM cached_prs WHERE workspace_id = ?").all(workspaceId);
+  if (rows.length === 0) return null;
+  if (rows.some((r) => isCacheStale(r.fetched_at))) return null;
+  return rows.map((r) => JSON.parse(r.data));
+}
+function setCachedPRs(workspaceId, prs) {
+  const upsert = db().prepare(`
+        INSERT INTO cached_prs (workspace_id, pr_number, data, fetched_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(workspace_id, pr_number) DO UPDATE SET
+            data       = excluded.data,
+            fetched_at = excluded.fetched_at
+    `);
+  const now = Date.now();
+  db().transaction(() => {
+    for (const pr of prs) {
+      upsert.run(workspaceId, pr.number, JSON.stringify(pr), now);
+    }
+  })();
+}
+const storiesService = {
+  async sync() {
+    const ws = workspaceService.getActiveInternal();
+    if (!ws) throw new Error("No active workspace");
+    const fetchIssues = async () => {
+      const cached = getCachedIssues(ws.id);
+      if (cached) return cached;
+      const jiraToken = await getValidAccessToken(ws.accountId);
+      const cloudId = await getCloudId(jiraToken);
+      const rawIssues = await getJiraIssues(jiraToken, cloudId, ws.projectKey);
+      const issues2 = rawIssues.map((r) => mapJiraIssue(r, cloudId));
+      setCachedIssues(ws.id, issues2);
+      return issues2;
+    };
+    const fetchPRs = async () => {
+      const cached = getCachedPRs(ws.id);
+      if (cached) return cached;
+      const gitToken = await getValidGitHubToken(ws.gitAccountId);
+      const prs2 = await getGitHubPRs(gitToken, ws.gitRepoFullName);
+      setCachedPRs(ws.id, prs2);
+      return prs2;
+    };
+    const [issues, prs] = await Promise.all([fetchIssues(), fetchPRs()]);
+    storiesService._rebuildAutoLinks(ws.id, issues, prs);
+    const stories = assembleLinkedIssues(issues, prs, ws.id).filter((i) => i.type === "Story");
+    return groupByStatus(stories);
+  },
+  /**
+   * Rebuilds auto-detected pr_links rows for the workspace atomically.
+   * The delete and all inserts run in a single transaction so a failure
+   * never leaves the table in a partially-cleared state.
+   * Manual rows (source='manual') are never touched.
+   */
+  _rebuildAutoLinks(workspaceId, issues, prs) {
+    const knownKeys = new Set(issues.map((i) => i.key));
+    const autoLinks = buildAutoLinks(prs, knownKeys);
+    const prMap = new Map(prs.map((p) => [p.number, p]));
+    const now = Date.now();
+    const deleteAuto = db().prepare(
+      `DELETE FROM pr_links WHERE workspace_id = ? AND source = 'auto'`
+    );
+    const insert = db().prepare(`
+            INSERT OR IGNORE INTO pr_links
+                (workspace_id, issue_key, pr_number, pr_title, source, added_at)
+            VALUES (?, ?, ?, ?, 'auto', ?)
+        `);
+    db().transaction(() => {
+      deleteAuto.run(workspaceId);
+      for (const [issueKey, prNumbers] of autoLinks) {
+        for (const prNum of prNumbers) {
+          const pr = prMap.get(prNum);
+          if (!pr) continue;
+          insert.run(workspaceId, issueKey, prNum, pr.title, now);
+        }
+      }
+    })();
+  },
+  async linkPR(issueKey, prNumber) {
+    const ws = workspaceService.getActiveInternal();
+    if (!ws) throw new Error("No active workspace");
+    const row = db().prepare("SELECT data FROM cached_prs WHERE workspace_id = ? AND pr_number = ?").get(ws.id, prNumber);
+    if (!row) throw new Error(`PR #${prNumber} not found in cache. Run a sync first.`);
+    const pr = JSON.parse(row.data);
+    db().prepare(`
+            INSERT OR REPLACE INTO pr_links
+                (workspace_id, issue_key, pr_number, pr_title, source, added_at)
+            VALUES (?, ?, ?, ?, 'manual', ?)
+        `).run(ws.id, issueKey, prNumber, pr.title, Date.now());
+    return storiesService._getLinkedIssue(ws.id, issueKey);
+  },
+  async unlinkPR(issueKey, prNumber) {
+    const ws = workspaceService.getActiveInternal();
+    if (!ws) throw new Error("No active workspace");
+    db().prepare(`
+            DELETE FROM pr_links
+            WHERE workspace_id = ? AND issue_key = ? AND pr_number = ? AND source = 'manual'
+        `).run(ws.id, issueKey, prNumber);
+    return storiesService._getLinkedIssue(ws.id, issueKey);
+  },
+  searchPRs(query) {
+    const ws = workspaceService.getActiveInternal();
+    if (!ws) throw new Error("No active workspace");
+    const rows = db().prepare("SELECT data FROM cached_prs WHERE workspace_id = ?").all(ws.id);
+    const prs = rows.map((r) => JSON.parse(r.data));
+    const q = query.toLowerCase().trim();
+    if (!q) return prs;
+    return prs.filter(
+      (pr) => pr.title.toLowerCase().includes(q) || String(pr.number).includes(q)
+    );
+  },
+  async getPRByUrl(url2) {
+    const ws = workspaceService.getActiveInternal();
+    if (!ws) throw new Error("No active workspace");
+    const token = await getValidGitHubToken(ws.gitAccountId);
+    const pr = await getPRByUrl(token, url2, ws.gitRepoFullName);
+    const now = Date.now();
+    db().prepare(`
+            INSERT OR REPLACE INTO cached_prs
+                (workspace_id, pr_number, data, fetched_at)
+            VALUES (?, ?, ?, ?)
+        `).run(ws.id, pr.number, JSON.stringify(pr), now);
+    return pr;
+  },
+  // ── Internal helper ───────────────────────────────────────────────────────
+  _getLinkedIssue(workspaceId, issueKey) {
+    const issueRow = db().prepare("SELECT data FROM cached_issues WHERE workspace_id = ? AND issue_key = ?").get(workspaceId, issueKey);
+    if (!issueRow) throw new Error(`Issue ${issueKey} not in cache`);
+    const allPRRows = db().prepare("SELECT data FROM cached_prs WHERE workspace_id = ?").all(workspaceId);
+    JSON.parse(issueRow.data);
+    const allPRs = allPRRows.map((r) => JSON.parse(r.data));
+    const allIssueRows = db().prepare("SELECT data FROM cached_issues WHERE workspace_id = ?").all(workspaceId);
+    const allIssues = allIssueRows.map((r) => JSON.parse(r.data));
+    const linked = assembleLinkedIssues(allIssues, allPRs, workspaceId);
+    const found = linked.find((i) => i.key === issueKey);
+    if (!found) throw new Error(`Could not assemble LinkedIssue for ${issueKey}`);
+    return found;
   }
 };
 function handle(fn) {
   return async (_e, ...args) => {
     try {
       const result = await fn(...args);
-      return { success: true, ...result ?? {} };
+      return { success: true, data: result ?? null, error: null };
     } catch (err) {
-      return { success: false, error: err.message ?? String(err) };
+      console.error("[ipc] Error:", err.message);
+      return { success: false, data: null, error: err.message ?? String(err) };
     }
   };
 }
 function registerIpcHandlers() {
   ipcMain.handle("ping", () => "pong");
-  ipcMain.handle("workspace:list", () => workspaceService.list());
-  ipcMain.handle("workspace:getActive", () => workspaceService.getActive());
+  ipcMain.handle(
+    "workspace:list",
+    handle(() => workspaceService.list())
+  );
+  ipcMain.handle(
+    "workspace:getActive",
+    handle(() => workspaceService.getActive())
+  );
   ipcMain.handle(
     "workspace:setActive",
     handle((id) => workspaceService.setActive(id))
@@ -18112,11 +18756,7 @@ function registerIpcHandlers() {
     handle((payload) => {
       const accountId = jiraOnboardingService.consumeAccountId();
       const gitAccountId = githubOnboardingService.consumeAccountId();
-      return workspaceService.create({
-        ...payload,
-        accountId,
-        gitAccountId
-      });
+      return workspaceService.create({ ...payload, accountId, gitAccountId });
     })
   );
   ipcMain.handle(
@@ -18128,34 +18768,62 @@ function registerIpcHandlers() {
     handle(() => jiraOnboardingService.getProjects())
   );
   ipcMain.handle(
+    "jira:getIssues",
+    handle(async () => {
+      const active = workspaceService.getActiveInternal();
+      if (!active) throw new Error("No active workspace");
+      const token = await getValidAccessToken(active.accountId);
+      const cloudId = await getCloudId(token);
+      return getJiraIssues(token, cloudId, active.projectKey);
+    })
+  );
+  ipcMain.handle(
+    "jira:listAccounts",
+    handle(() => listAccounts())
+  );
+  ipcMain.handle(
+    "jira:isConnected",
+    handle(async () => {
+      const accounts = await listAccounts();
+      return accounts.length > 0;
+    })
+  );
+  ipcMain.handle(
     "github:connect",
-    handle(() => githubOnboardingService.connect())
+    handle((hostname) => githubOnboardingService.connect(hostname))
   );
   ipcMain.handle(
     "github:getReposForNewAccount",
     handle(() => githubOnboardingService.getRepos())
   );
   ipcMain.handle(
-    "jira:getIssues",
-    handle(async () => {
-      const ws = workspaceStore.getActive();
-      if (!ws) throw new Error("No active workspace");
-      const token = await getValidAccessToken(ws.accountId);
-      const cloudId = await getCloudId(token);
-      const issues = await getJiraIssues(token, cloudId, ws.projectKey);
-      return { issues };
+    "github:getRepoByUrl",
+    handle(async (url2) => {
+      if (!(url2 == null ? void 0 : url2.trim())) throw new Error("URL is required");
+      const accountId = githubOnboardingService.peekAccountId();
+      const token = await getValidGitHubToken(accountId);
+      return getRepoByUrl(token, url2);
     })
   );
   ipcMain.handle(
-    "jira:listAccounts",
-    handle(async () => ({ accounts: await listAccounts() }))
+    "stories:sync",
+    handle(() => storiesService.sync())
   );
   ipcMain.handle(
-    "jira:isConnected",
-    handle(async () => {
-      const accounts = await listAccounts();
-      return { connected: accounts.length > 0 };
-    })
+    "stories:searchPRs",
+    handle((query) => storiesService.searchPRs(query ?? ""))
+  );
+  ipcMain.handle(
+    "stories:getPRByUrl",
+    handle((url2) => storiesService.getPRByUrl(url2))
+  );
+  ipcMain.handle(
+    "stories:linkPR",
+    handle((issueKey, prNumber) => storiesService.linkPR(issueKey, prNumber))
+  );
+  ipcMain.handle(
+    "stories:unlinkPR",
+    handle((issueKey, prNumber) => storiesService.unlinkPR(issueKey, prNumber))
   );
 }
 var main = {};
@@ -18235,9 +18903,7 @@ const RENDERER_DIST = path$2.join(process.env.APP_ROOT, "dist");
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path$2.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient("storylink", process.execPath, [
-      path$2.resolve(process.argv[1])
-    ]);
+    app.setAsDefaultProtocolClient("storylink", process.execPath, [path$2.resolve(process.argv[1])]);
   }
 } else {
   app.setAsDefaultProtocolClient("storylink");
@@ -18246,9 +18912,7 @@ let win;
 function createWindow() {
   win = new BrowserWindow({
     icon: path$2.join(process.env.VITE_PUBLIC, "electron-vite.svg"),
-    webPreferences: {
-      preload: path$2.join(__dirname$1, "preload.mjs")
-    }
+    webPreferences: { preload: path$2.join(__dirname$1, "preload.mjs") }
   });
   win.webContents.openDevTools();
   win.webContents.on("did-finish-load", () => {
@@ -18260,20 +18924,20 @@ function createWindow() {
     win.loadFile(path$2.join(RENDERER_DIST, "index.html"));
   }
 }
+function routeCallback(url2) {
+  if (!handleGitHubCallback(url2)) handleCallback(url2);
+}
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
+    close();
     app.quit();
     win = null;
   }
 });
+app.on("before-quit", () => close());
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
-function routeCallback(url2) {
-  if (!handleGitHubCallback(url2)) {
-    handleCallback(url2);
-  }
-}
 app.on("open-url", (event, url2) => {
   event.preventDefault();
   routeCallback(url2);
@@ -18292,6 +18956,7 @@ if (!gotTheLock) {
   });
 }
 app.whenReady().then(() => {
+  open();
   registerIpcHandlers();
   createWindow();
 });

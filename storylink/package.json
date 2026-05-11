@@ -1,13 +1,14 @@
 {
   "name": "storylink",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && electron-builder",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "build": {
     "appId": "com.storylink.app",
@@ -33,6 +34,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/material": "^9.0.0",
+    "better-sqlite3": "^12.9.0",
     "electron-log": "^5.4.3",
     "keytar": "^7.9.0",
     "react": "^18.2.0",

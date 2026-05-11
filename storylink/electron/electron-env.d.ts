@@ -1,6 +1,13 @@
 /// <reference types="vite-plugin-electron/electron-env" />
 
-import type { WorkspaceView, ActiveWorkspaceView } from '@shared/types/workspace.types';
+import type {
+    WorkspaceView,
+    ActiveWorkspaceView,
+    LinkedStoryGroup,
+    LinkedIssue,
+    GitHubPR,
+    GitRepo,
+} from '@shared/types/workspace.types';
 
 declare namespace NodeJS {
     interface ProcessEnv {
@@ -9,34 +16,65 @@ declare namespace NodeJS {
     }
 }
 
+// Consistent IPC envelope — every call returns one of these two shapes.
+type IpcResult<T> =
+    | { success: true; data: T; error: null }
+    | { success: false; data: null; error: string };
+
+// Shape returned by githubOnboardingService.connect()
+type GitHubConnectData = { login: string; host: string };
+
+// Shape returned by githubOnboardingService.getRepos()
+type GitHubReposData = {
+    repos: GitRepo[];
+    mine: GitRepo[];
+    orgs: GitRepo[];
+    login: string;
+    host: string;
+};
+
+// Shape returned by workspaceService.create()
+type CreateWorkspaceData = { workspaceId: string };
+
+// Shape returned by jiraOnboardingService.getProjects()
+type JiraProjectsData = { projects: JiraProject[] };
+
 interface Window {
     ipcRenderer: import('electron').IpcRenderer;
 
     workspace: {
-        list(): Promise<WorkspaceView[]>;
-        getActive(): Promise<ActiveWorkspaceView>;
-        setActive(workspaceId: string): Promise<{ success: boolean; error?: string }>;
-        remove(workspaceId: string): Promise<{ success: boolean; error?: string }>;
-        /** Renderer sends display data only — both accountIds resolved by Electron */
+        list(): Promise<IpcResult<WorkspaceView[]>>;
+        getActive(): Promise<IpcResult<ActiveWorkspaceView>>;
+        setActive(id: string): Promise<IpcResult<void>>;
+        remove(id: string): Promise<IpcResult<{ success: boolean }>>;
         create(p: {
             name: string;
             projectKey: string;
             projectName: string;
             gitRepoFullName: string;
             gitRepoId: number;
-        }): Promise<{ success: boolean; workspaceId?: string; error?: string }>;
+        }): Promise<IpcResult<CreateWorkspaceData>>;
     };
 
     jira: {
-        getIssues(): Promise<{ success: boolean; issues?: any[]; error?: string }>;
-        connect(): Promise<{ success: boolean; error?: string }>;
-        getProjectsForNewAccount(): Promise<{ success: boolean; projects?: any[]; error?: string }>;
-        listAccounts(): Promise<{ success: boolean; accounts: string[] }>;
-        isConnected(): Promise<{ success: boolean; connected: boolean }>;
+        getIssues(): Promise<IpcResult<any[]>>;
+        connect(): Promise<IpcResult<void>>;
+        getProjectsForNewAccount(): Promise<IpcResult<JiraProjectsData>>;
+        listAccounts(): Promise<IpcResult<string[]>>;
+        isConnected(): Promise<IpcResult<boolean>>;
     };
 
     github: {
-        connect(): Promise<{ success: boolean; login?: string; error?: string }>;
-        getReposForNewAccount(): Promise<{ success: boolean; repos?: any[]; error?: string }>;
+        connect(hostname?: string): Promise<IpcResult<GitHubConnectData>>;
+        getReposForNewAccount(): Promise<IpcResult<GitHubReposData>>;
+        getRepoByUrl(url: string): Promise<IpcResult<GitRepo & { host: string }>>;
+    };
+
+    stories: {
+        sync(): Promise<IpcResult<LinkedStoryGroup[]>>;
+        searchPRs(query: string): Promise<IpcResult<GitHubPR[]>>;
+        getPRByUrl(url: string): Promise<IpcResult<GitHubPR>>;
+        linkPR(issueKey: string, prNumber: number): Promise<IpcResult<LinkedIssue>>;
+        unlinkPR(issueKey: string, prNumber: number): Promise<IpcResult<LinkedIssue>>;
     };
 }

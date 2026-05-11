@@ -10,7 +10,7 @@ export function JiraConnection() {
     // Now uses the dedicated isConnected IPC call added to preload + ipchandlers.
     useEffect(() => {
         window.jira.isConnected().then(res => {
-            setConnected(res.success ? res.connected : false);
+            setConnected(res.success ? (res.data ?? false) : false);
         });
     }, []);
 

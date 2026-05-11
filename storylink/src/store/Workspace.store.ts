@@ -71,7 +71,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     loadWorkspaces: async () => {
         set({ workspacesStatus: 'loading' });
 
-        const list = await window.workspace.list();
+        const result = await window.workspace.list();
+        const list = result.data ?? [];
         const active = list.find(w => w.isActive) ?? null;
 
         set({ workspaces: list, activeWorkspace: active, workspacesStatus: 'idle' });
@@ -83,7 +84,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     setActive: async (workspaceId) => {
         await window.workspace.setActive(workspaceId);
 
-        const list = await window.workspace.list();
+        const result = await window.workspace.list();
+        const list = result.data ?? [];
         const active = list.find(w => w.isActive) ?? null;
         const cached = active ? getCached(active.id) : null;
 
@@ -122,7 +124,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
 
         const result = await window.jira.getIssues();
 
-        if (!result.success || !result.issues) {
+        if (!result.success || !result.data) {
             set({
                 issuesStatus: 'error',
                 issuesError: result.error ?? 'Failed to load issues',
@@ -130,7 +132,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
             return;
         }
 
-        const issues = mapIssues(result.issues);
+        const issues = mapIssues(result.data);
         issuesCache.set(active.id, { issues, fetchedAt: Date.now() });
         set({ issues, issuesStatus: 'idle' });
     },

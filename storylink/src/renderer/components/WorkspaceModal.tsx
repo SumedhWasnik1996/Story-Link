@@ -67,7 +67,7 @@ export default function AddWorkspaceModal({ onClose }: Props) {
             if (!prjResult.success) throw new Error(prjResult.error ?? 'Failed to load projects');
 
             setJiraProjects(
-                prjResult.projects?.map((p: any) => ({
+                prjResult.data?.projects?.map((p: any) => ({
                     id: p.id, key: p.key, name: p.name,
                 })) ?? []
             );
@@ -96,13 +96,13 @@ export default function AddWorkspaceModal({ onClose }: Props) {
             const result = await window.github.connect();
             if (!result.success) throw new Error(result.error ?? 'GitHub connection failed');
 
-            setGithubLogin(result.login ?? '');
+            setGithubLogin(result.data?.login ?? '');
 
             const repoResult = await window.github.getReposForNewAccount();
             if (!repoResult.success) throw new Error(repoResult.error ?? 'Failed to load repos');
 
             setGithubRepos(
-                repoResult.repos?.map((r: any): GitRepo => ({
+                repoResult.data?.repos?.map((r: any): GitRepo => ({
                     id: r.id,
                     fullName: r.fullName,
                     name: r.name,

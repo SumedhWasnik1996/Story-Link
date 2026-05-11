@@ -3,6 +3,7 @@ import { app, BrowserWindow } from 'electron';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { open as openDb, close as closeDb } from './main/db/db';
 import { registerIpcHandlers } from './main/ipc/ipchandlers';
 import { handleCallback as handleJiraCallback } from './main/auth/jira.auth';
 import { handleGitHubCallback } from './main/auth/github.auth';
@@ -25,9 +26,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
 
 if (process.defaultApp) {
     if (process.argv.length >= 2) {
-        app.setAsDefaultProtocolClient('storylink', process.execPath, [
-            path.resolve(process.argv[1]),
-        ]);
+        app.setAsDefaultProtocolClient('storylink', process.execPath, [path.resolve(process.argv[1])]);
     }
 } else {
     app.setAsDefaultProtocolClient('storylink');
@@ -38,17 +37,12 @@ let win: BrowserWindow | null;
 function createWindow() {
     win = new BrowserWindow({
         icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
-        webPreferences: {
-            preload: path.join(__dirname, 'preload.mjs'),
-        },
+        webPreferences: { preload: path.join(__dirname, 'preload.mjs') },
     });
-
     win.webContents.openDevTools();
-
     win.webContents.on('did-finish-load', () => {
         win?.webContents.send('main-process-message', new Date().toLocaleString());
     });
-
     if (VITE_DEV_SERVER_URL) {
         win.loadURL(VITE_DEV_SERVER_URL);
     } else {
@@ -56,53 +50,31 @@ function createWindow() {
     }
 }
 
-app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        app.quit();
-        win = null;
-    }
-});
-
-app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
-
-/**
- * Routes an incoming storylink:// URL to the correct OAuth handler.
- * GitHub's handleGitHubCallback returns true if it consumed the URL,
- * so Jira's handler is only called when GitHub didn't claim it.
- * This means both can share the same redirect URI without conflict.
- */
+// Route storylink:// callbacks — GitHub checks first, falls through to Jira
 function routeCallback(url: string) {
-    if (!handleGitHubCallback(url)) {
-        handleJiraCallback(url);
-    }
+    if (!handleGitHubCallback(url)) handleJiraCallback(url);
 }
 
-// macOS — OAuth callback arrives via open-url
-app.on('open-url', (event, url) => {
-    event.preventDefault();
-    routeCallback(url);
+app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') { closeDb(); app.quit(); win = null; }
 });
+app.on('before-quit', () => closeDb());
+app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+app.on('open-url', (event, url) => { event.preventDefault(); routeCallback(url); });
 
-// Windows / Linux — OAuth callback arrives as second-instance CLI arg
 const gotTheLock = app.requestSingleInstanceLock();
-
 if (!gotTheLock) {
     app.quit();
 } else {
     app.on('second-instance', (_event, commandLine) => {
         const url = commandLine.find(arg => arg.startsWith('storylink://'));
         if (url) routeCallback(url);
-
-        if (win) {
-            if (win.isMinimized()) win.restore();
-            win.focus();
-        }
+        if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
     });
 }
 
 app.whenReady().then(() => {
-    registerIpcHandlers();
-    createWindow();
+    openDb();               // 1. Open SQLite DB and run migrations
+    registerIpcHandlers();  // 2. Register all IPC handlers
+    createWindow();         // 3. Show the window
 });

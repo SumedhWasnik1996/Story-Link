@@ -2,27 +2,27 @@
 const electron = require("electron");
 electron.contextBridge.exposeInMainWorld("ipcRenderer", {
   on(...args) {
-    const [channel, listener] = args;
-    return electron.ipcRenderer.on(channel, (event, ...a) => listener(event, ...a));
+    const [c, l] = args;
+    return electron.ipcRenderer.on(c, (e, ...a) => l(e, ...a));
   },
   off(...args) {
-    const [channel, ...rest] = args;
-    return electron.ipcRenderer.off(channel, ...rest);
+    const [c, ...o] = args;
+    return electron.ipcRenderer.off(c, ...o);
   },
   send(...args) {
-    const [channel, ...rest] = args;
-    return electron.ipcRenderer.send(channel, ...rest);
+    const [c, ...o] = args;
+    return electron.ipcRenderer.send(c, ...o);
   },
   invoke(...args) {
-    const [channel, ...rest] = args;
-    return electron.ipcRenderer.invoke(channel, ...rest);
+    const [c, ...o] = args;
+    return electron.ipcRenderer.invoke(c, ...o);
   }
 });
 electron.contextBridge.exposeInMainWorld("workspace", {
   list: () => electron.ipcRenderer.invoke("workspace:list"),
   getActive: () => electron.ipcRenderer.invoke("workspace:getActive"),
-  setActive: (workspaceId) => electron.ipcRenderer.invoke("workspace:setActive", workspaceId),
-  remove: (workspaceId) => electron.ipcRenderer.invoke("workspace:remove", workspaceId),
+  setActive: (id) => electron.ipcRenderer.invoke("workspace:setActive", id),
+  remove: (id) => electron.ipcRenderer.invoke("workspace:remove", id),
   create: (payload) => electron.ipcRenderer.invoke("workspace:create", payload)
 });
 electron.contextBridge.exposeInMainWorld("jira", {
@@ -33,6 +33,14 @@ electron.contextBridge.exposeInMainWorld("jira", {
   isConnected: () => electron.ipcRenderer.invoke("jira:isConnected")
 });
 electron.contextBridge.exposeInMainWorld("github", {
-  connect: () => electron.ipcRenderer.invoke("github:connect"),
-  getReposForNewAccount: () => electron.ipcRenderer.invoke("github:getReposForNewAccount")
+  connect: (hostname) => electron.ipcRenderer.invoke("github:connect", hostname),
+  getReposForNewAccount: () => electron.ipcRenderer.invoke("github:getReposForNewAccount"),
+  getRepoByUrl: (url) => electron.ipcRenderer.invoke("github:getRepoByUrl", url)
+});
+electron.contextBridge.exposeInMainWorld("stories", {
+  sync: () => electron.ipcRenderer.invoke("stories:sync"),
+  searchPRs: (query) => electron.ipcRenderer.invoke("stories:searchPRs", query),
+  getPRByUrl: (url) => electron.ipcRenderer.invoke("stories:getPRByUrl", url),
+  linkPR: (issueKey, prNumber) => electron.ipcRenderer.invoke("stories:linkPR", issueKey, prNumber),
+  unlinkPR: (issueKey, prNumber) => electron.ipcRenderer.invoke("stories:unlinkPR", issueKey, prNumber)
 });

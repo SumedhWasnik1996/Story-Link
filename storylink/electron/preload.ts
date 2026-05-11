@@ -3,54 +3,63 @@ import { ipcRenderer, contextBridge } from 'electron';
 
 contextBridge.exposeInMainWorld('ipcRenderer', {
     on(...args: Parameters<typeof ipcRenderer.on>) {
-        const [channel, listener] = args;
-        return ipcRenderer.on(channel, (event, ...a) => listener(event, ...a));
+        const [c, l] = args;
+        return ipcRenderer.on(c, (e, ...a) => l(e, ...a));
     },
     off(...args: Parameters<typeof ipcRenderer.off>) {
-        const [channel, ...rest] = args;
-        return ipcRenderer.off(channel, ...rest);
+        const [c, ...o] = args;
+        return ipcRenderer.off(c, ...o);
     },
     send(...args: Parameters<typeof ipcRenderer.send>) {
-        const [channel, ...rest] = args;
-        return ipcRenderer.send(channel, ...rest);
+        const [c, ...o] = args;
+        return ipcRenderer.send(c, ...o);
     },
     invoke(...args: Parameters<typeof ipcRenderer.invoke>) {
-        const [channel, ...rest] = args;
-        return ipcRenderer.invoke(channel, ...rest);
+        const [c, ...o] = args;
+        return ipcRenderer.invoke(c, ...o);
     },
 });
 
 // ── Workspace ─────────────────────────────────────────────────────────────────
 
 contextBridge.exposeInMainWorld('workspace', {
-    list: () => ipcRenderer.invoke('workspace:list'),
-    getActive: () => ipcRenderer.invoke('workspace:getActive'),
-    setActive: (workspaceId: string) =>
-        ipcRenderer.invoke('workspace:setActive', workspaceId),
-    remove: (workspaceId: string) =>
-        ipcRenderer.invoke('workspace:remove', workspaceId),
-    create: (payload: {
+    list     : ()           => ipcRenderer.invoke('workspace:list'),
+    getActive: ()           => ipcRenderer.invoke('workspace:getActive'),
+    setActive: (id: string) => ipcRenderer.invoke('workspace:setActive', id),
+    remove   : (id: string) => ipcRenderer.invoke('workspace:remove', id),
+    create   : (payload: {
         name: string;
         projectKey: string;
         projectName: string;
         gitRepoFullName: string;
         gitRepoId: number;
-    }) => ipcRenderer.invoke('workspace:create', payload),
+    })                      => ipcRenderer.invoke('workspace:create', payload),
 });
 
 // ── Jira ──────────────────────────────────────────────────────────────────────
 
 contextBridge.exposeInMainWorld('jira', {
-    getIssues: () => ipcRenderer.invoke('jira:getIssues'),
-    connect: () => ipcRenderer.invoke('jira:connect'),
+    getIssues:                () => ipcRenderer.invoke('jira:getIssues'),
+    connect:                  () => ipcRenderer.invoke('jira:connect'),
     getProjectsForNewAccount: () => ipcRenderer.invoke('jira:getProjectsForNewAccount'),
-    listAccounts: () => ipcRenderer.invoke('jira:listAccounts'),
-    isConnected: () => ipcRenderer.invoke('jira:isConnected'),
+    listAccounts:             () => ipcRenderer.invoke('jira:listAccounts'),
+    isConnected:              () => ipcRenderer.invoke('jira:isConnected'),
 });
 
 // ── GitHub ────────────────────────────────────────────────────────────────────
 
 contextBridge.exposeInMainWorld('github', {
-    connect: () => ipcRenderer.invoke('github:connect'),
-    getReposForNewAccount: () => ipcRenderer.invoke('github:getReposForNewAccount'),
+    connect:               (hostname?: string) => ipcRenderer.invoke('github:connect', hostname),
+    getReposForNewAccount: ()                  => ipcRenderer.invoke('github:getReposForNewAccount'),
+    getRepoByUrl:          (url: string)       => ipcRenderer.invoke('github:getRepoByUrl', url),
+});
+
+// ── Stories ───────────────────────────────────────────────────────────────────
+
+contextBridge.exposeInMainWorld('stories', {
+    sync:       ()                                   => ipcRenderer.invoke('stories:sync'),
+    searchPRs:  (query: string)                      => ipcRenderer.invoke('stories:searchPRs', query),
+    getPRByUrl: (url: string)                        => ipcRenderer.invoke('stories:getPRByUrl', url),
+    linkPR:     (issueKey: string, prNumber: number) => ipcRenderer.invoke('stories:linkPR', issueKey, prNumber),
+    unlinkPR:   (issueKey: string, prNumber: number) => ipcRenderer.invoke('stories:unlinkPR', issueKey, prNumber),
 });
